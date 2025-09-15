@@ -3,29 +3,41 @@ if not NotPlater then return end
 function NotPlater:LoadDefaultConfig()
     self.defaults = {
         profile = {
+            guildCache = {
+                general = {
+                    enable = true,
+                    useGuildClassColors = true,
+                    showCacheMessages = true,
+                },
+                advanced = {
+                    updateThrottle = 2,
+                    debugMode = false,
+                },
+            },
             threat = {
                 general = {
-                    mode = "hdps",
-                    enableMouseoverUpdate = true
+                mode = "hdps",
+                enableMouseoverUpdate = true
+            },
+            nameplateColors = {
+                general = {
+                    enable = true,
+                    useClassColors = false,
+                    useGuildClassColors = true, -- NEW: Enable guild class colors
                 },
-                nameplateColors = {
-                    general = {
-                        enable = true,
-                        useClassColors = false,
+                colors = {
+                    tank = {
+                        c1 = {0.5, 0.5, 1, 1},
+                        c2 = {1, 0.8, 0, 1},
+                        c3 = {1, 0.109, 0, 1}
                     },
-                    colors = {
-                        tank = {
-                            c1 = {0.5, 0.5, 1, 1},
-                            c2 = {1, 0.8, 0, 1},
-                            c3 = {1, 0.109, 0, 1}
-                        },
-                        hdps = {
-                            c1 = {1, 0.109, 0, 1},
-                            c2 = { 1, 0.8, 0, 1},
-                            c3 = {0.5, 0.5, 1, 1},
-                        }
+                    hdps = {
+                        c1 = {1, 0.109, 0, 1},
+                        c2 = { 1, 0.8, 0, 1},
+                        c3 = {0.5, 0.5, 1, 1},
                     }
-                },
+                }
+            },
                 percent = {
                     statusBar = {
                         general = {
@@ -205,6 +217,19 @@ function NotPlater:LoadDefaultConfig()
                         xOffset = 0,
                         yOffset = 0
                     }
+                },
+                smoothing = {
+                    general = {
+                        enable = false,
+                        mode = "smooth", -- "smooth" or "cutaway"  
+                        speed = 2.5,
+                    },
+                    cutaway = {
+                        enable = true,
+                        duration = 1.5,
+                        darkenFactor = 0.6,
+                        fadeOut = false,
+                    },
                 },
             },
             castBar = {

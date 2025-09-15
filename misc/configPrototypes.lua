@@ -741,4 +741,252 @@ function ConfigPrototypes:LoadConfigPrototypes()
         },
         size = ConfigPrototypes:GetGeneralisedSizeConfig()
     }
+    ConfigPrototypes.GuildCache = {
+        general = {
+            order = 0,
+            type = "group",
+            inline = true,
+            name = L["General"],
+            args = {
+                enable = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Enable Guild Cache"],
+                    desc = L["Enable guild member caching and class color enhancement"],
+                    width = "full",
+                    set = function(info, val)
+                        NotPlater.db.profile.guildCache.general.enable = val
+                        if val and NotPlater.GuildCache then
+                            -- Re-initialize if enabled
+                            NotPlater.GuildCache:Initialize()
+                        elseif not val and NotPlater.GuildCache then
+                            -- Clear cache if disabled
+                            NotPlater.GuildCache:ClearCache()
+                        end
+                        NotPlater:Reload()
+                    end,
+                    get = function(info)
+                        return NotPlater.db.profile.guildCache.general.enable
+                    end,
+                },
+                useGuildClassColors = {
+                    order = 1,
+                    type = "toggle",
+                    name = L["Use Guild Class Colors"],
+                    desc = L["Apply class colors to guild member nameplates immediately"],
+                    width = "full",
+                    disabled = function() 
+                        return not NotPlater.db.profile.guildCache.general.enable 
+                    end,
+                },
+                showCacheMessages = {
+                    order = 2,
+                    type = "toggle",
+                    name = L["Show Cache Messages"],
+                    desc = L["Display chat messages when guild roster is updated"],
+                    disabled = function() 
+                        return not NotPlater.db.profile.guildCache.general.enable 
+                    end,
+                },
+            },
+        },
+        statistics = {
+            order = 1,
+            type = "group",
+            inline = true,
+            name = L["Statistics"],
+            args = {
+                header = {
+                    order = 0,
+                    type = "header",
+                    name = L["Guild Cache Information"],
+                },
+                memberCount = {
+                    order = 1,
+                    type = "description",
+                    name = function()
+                        if NotPlater.GuildCache then
+                            local count = 0
+                            if type(NotPlater.GuildCache.GetMemberCount) == "function" then
+                                count = NotPlater.GuildCache:GetMemberCount()
+                            end
+                            return string.format(L["Cached Members: %d"], count)
+                        else
+                            return L["Guild cache not initialized"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                guildStatus = {
+                    order = 2,
+                    type = "description",
+                    name = function()
+                        local inGuild = IsInGuild()
+                        if inGuild then
+                            local guildName = GetGuildInfo("player")
+                            return string.format(L["Guild: %s"], guildName or L["Unknown"])
+                        else
+                            return L["Not in a guild"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                lastUpdate = {
+                    order = 3,
+                    type = "description",
+                    name = function()
+                        if NotPlater.GuildCache and NotPlater.GuildCache.IsRefreshInProgress and NotPlater.GuildCache:IsRefreshInProgress() then
+                            return "|cffFFFF00Refresh in progress...|r"
+                        elseif NotPlater.GuildCache and NotPlater.GuildCache.GetLastUpdateTime then
+                            local lastTime = NotPlater.GuildCache:GetLastUpdateTime()
+                            if lastTime then
+                                return string.format(L["Last Update: %s"], date("%H:%M:%S", lastTime))
+                            else
+                                return L["Never updated"]
+                            end
+                        else
+                            return L["Update info not available"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                spacer1 = {
+                    order = 4,
+                    type = "description",
+                    name = " ",
+                },
+                memberListHeader = {
+                    order = 5,
+                    type = "header",
+                    name = L["Cached Guild Members"],
+                },
+                memberList = {
+                    order = 6,
+                    type = "description",
+                    name = function()
+                        if not NotPlater.GuildCache or not NotPlater.GuildCache.GetMemberList then
+                            return L["Guild cache not available"]
+                        end
+                        
+                        local members = NotPlater.GuildCache:GetMemberList()
+                        if not members or #members == 0 then
+                            return L["No guild members cached"]
+                        end
+                        
+                        -- Sort members by name
+                        table.sort(members, function(a, b) return a.name < b.name end)
+                        
+                        local lines = {}
+                        for i, member in ipairs(members) do
+                            local classColor = member.classColor
+                            local colorCode = ""
+                            if classColor then
+                                -- Convert RGB to hex color code
+                                local r = math.floor(classColor.r * 255)
+                                local g = math.floor(classColor.g * 255)
+                                local b = math.floor(classColor.b * 255)
+                                colorCode = string.format("|cff%02x%02x%02x", r, g, b)
+                            end
+                            
+                            local line = string.format("%s%s|r - Level %d %s%s|r (%s)", 
+                                colorCode, 
+                                member.name, 
+                                member.level or 0,
+                                colorCode,
+                                member.class or "Unknown",
+                                member.online and "Online" or "Offline"
+                            )
+                            table.insert(lines, line)
+                            
+                            -- Limit to first 50 members to prevent UI overflow
+                            if i >= 50 then
+                                table.insert(lines, string.format("... and %d more members", #members - 50))
+                                break
+                            end
+                        end
+                        
+                        return table.concat(lines, "\n")
+                    end,
+                    fontSize = "small",
+                    width = "full",
+                },
+                spacer2 = {
+                    order = 7,
+                    type = "description",
+                    name = " ",
+                },
+                refreshButton = {
+                    order = 8,
+                    type = "execute",
+                    name = L["Refresh Guild Cache"],
+                    desc = L["Manually refresh the guild roster cache"],
+                    func = function()
+                        if NotPlater.GuildCache and NotPlater.GuildCache.RequestGuildRoster then
+                            local oldCount = 0
+                            if NotPlater.GuildCache.GetMemberCount then
+                                oldCount = NotPlater.GuildCache:GetMemberCount()
+                            end
+                            
+                            NotPlater.GuildCache:RequestGuildRoster()
+                            
+                            -- Show immediate feedback with safe string handling
+                            local message = "Guild roster refresh requested"
+                            if oldCount and oldCount > 0 then
+                                message = message .. " (currently " .. tostring(oldCount) .. " cached)"
+                            end
+                            
+                            -- Use direct chat output instead of NotPlater:Print
+                            if DEFAULT_CHAT_FRAME then
+                                DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: " .. message)
+                            end
+                            
+                            -- Force immediate interface refresh
+                            if NotPlater.GuildCache.RefreshConfigInterface then
+                                NotPlater.GuildCache:RefreshConfigInterface()
+                            end
+                        end
+                    end,
+                    disabled = function() 
+                        return not NotPlater.db.profile.guildCache.general.enable or not IsInGuild()
+                    end,
+                },
+            },
+        },
+        advanced = {
+            order = 2,
+            type = "group",
+            inline = true,
+            name = L["Advanced"],
+            args = {
+                updateThrottle = {
+                    order = 0,
+                    type = "range",
+                    name = L["Update Throttle"],
+                    desc = L["Minimum seconds between guild roster requests"],
+                    min = 1,
+                    max = 10,
+                    step = 1,
+                    get = function(info) return NotPlater.db.profile.guildCache.advanced.updateThrottle end,
+                    set = function(info, val) 
+                        NotPlater.db.profile.guildCache.advanced.updateThrottle = val
+                        NotPlater:Reload()
+                    end,
+                    disabled = function() 
+                        return not NotPlater.db.profile.guildCache.general.enable 
+                    end,
+                },
+                debugMode = {
+                    order = 1,
+                    type = "toggle",
+                    name = L["Debug Mode"],
+                    desc = L["Enable debug messages for guild cache operations"],
+                    get = function(info) return NotPlater.db.profile.guildCache.advanced.debugMode end,
+                    set = function(info, val) NotPlater.db.profile.guildCache.advanced.debugMode = val end,
+                    disabled = function() 
+                        return not NotPlater.db.profile.guildCache.general.enable 
+                    end,
+                },
+            },
+        },
+    }
 end

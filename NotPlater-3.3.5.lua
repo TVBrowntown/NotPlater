@@ -9,9 +9,14 @@ local UnitExists = UnitExists
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
 local frames = {}
+local numChildren = -1
 
-NotPlater.frame = CreateFrame("Frame")
+-- DO NOT create frame here - wait for OnInitialize
+
 function NotPlater:OnInitialize()
+	-- Create the frame FIRST in OnInitialize
+	self.frame = CreateFrame("Frame")
+	
 	self:LoadDefaultConfig()
 
 	self.db = LibStub:GetLibrary("AceDB-3.0"):New("NotPlaterDB", self.defaults)
@@ -22,9 +27,52 @@ function NotPlater:OnInitialize()
 	self:RegisterEvent("PARTY_MEMBERS_CHANGED")
 	self:RegisterEvent("RAID_ROSTER_UPDATE")
 	self:RegisterEvent("PLAYER_TARGET_CHANGED")
+	
 	self:Reload()
 
 	self.SML = LibStub:GetLibrary("LibSharedMedia-3.0")
+	
+	-- Set up frame scripts AFTER frame is created
+	self:SetupFrameScripts()
+end
+
+function NotPlater:SetupFrameScripts()
+	-- Make sure frame exists
+	if not self.frame then
+		self.frame = CreateFrame("Frame")
+	end
+	
+	-- Set up the OnUpdate script
+	self.frame:SetScript("OnUpdate", function(self, elapsed)
+		if(WorldFrame:GetNumChildren() ~= numChildren) then
+			numChildren = WorldFrame:GetNumChildren()
+			NotPlater:HookFrames(WorldFrame:GetChildren())
+		end
+	end)
+
+	-- Set up the OnEvent script
+	self.frame:SetScript("OnEvent", function(self, event, unit)
+		for frame in pairs(frames) do
+			if frame:IsShown() then
+				if unit == "target" then
+					if NotPlater:IsTarget(frame) then
+						frame.healthBar.lastUnitMatch = "target"
+						NotPlater:CastBarOnCast(frame, event, unit)
+					end
+				else
+					local nameText, levelText = select(7, frame:GetRegions())
+					local name = nameText:GetText()
+					local level = levelText:GetText()
+					local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
+					local healthValue = frame.healthBar:GetValue()
+					if name == UnitName(unit) and level == tostring(UnitLevel(unit)) and healthValue == UnitHealth(unit) and healthValue ~= healthMaxValue then
+						frame.healthBar.lastUnitMatch = unit
+						NotPlater:CastBarOnCast(frame, event, unit)
+					end
+				end
+			end
+		end
+	end)
 end
 
 function NotPlater:IsTarget(frame)
@@ -87,7 +135,12 @@ function NotPlater:PrepareFrame(frame)
 				end
 				if NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
 					if not self.unitClass then
-						NotPlater:ClassCheck(self)
+						-- Try guild cache first, then fallback to regular class check
+						if NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
+							NotPlater.GuildCache:EnhancedClassCheck(self)
+						else
+							NotPlater:ClassCheck(self)
+						end
 					end
 					if self.unitClass then
 						frame.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
@@ -137,10 +190,16 @@ function NotPlater:HookFrames(...)
 end
 
 function NotPlater:Reload()
+	-- Make sure frame exists before using it
+	if not self.frame then
+		self.frame = CreateFrame("Frame")
+		self:SetupFrameScripts()
+	end
+	
 	if self.db.profile.castBar.statusBar.general.enable then
-		self:RegisterCastBarEvents(NotPlater.frame)
+		self:RegisterCastBarEvents(self.frame)
 	else
-		self:UnregisterCastBarEvents(NotPlater.frame)
+		self:UnregisterCastBarEvents(self.frame)
 	end
 
 	if self.db.profile.threat.general.enableMouseoverUpdate then
@@ -222,33 +281,4 @@ function NotPlater:UPDATE_MOUSEOVER_UNIT()
 	end
 end
 
-local numChildren = -1
-NotPlater.frame:SetScript("OnUpdate", function(self, elapsed)
-	if(WorldFrame:GetNumChildren() ~= numChildren) then
-		numChildren = WorldFrame:GetNumChildren()
-		NotPlater:HookFrames(WorldFrame:GetChildren())
-	end
-end)
-
-NotPlater.frame:SetScript("OnEvent", function(self, event, unit)
-	for frame in pairs(frames) do
-		if frame:IsShown() then
-			if unit == "target" then
-				if NotPlater:IsTarget(frame) then
-					frame.healthBar.lastUnitMatch = "target"
-					NotPlater:CastBarOnCast(frame, event, unit)
-				end
-			else
-				local nameText, levelText = select(7, frame:GetRegions())
-				local name = nameText:GetText()
-				local level = levelText:GetText()
-				local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
-				local healthValue = frame.healthBar:GetValue()
-				if name == UnitName(unit) and level == tostring(UnitLevel(unit)) and healthValue == UnitHealth(unit) and healthValue ~= healthMaxValue then
-					frame.healthBar.lastUnitMatch = unit
-					NotPlater:CastBarOnCast(frame, event, unit)
-				end
-			end
-		end
-	end
-end)
+-- NOTE: Frame scripts are now set up in SetupFrameScripts() function called from OnInitialize()

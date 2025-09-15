@@ -345,6 +345,8 @@ local function LoadOptions()
 	options.type = "group"
 	options.name = "NotPlater"
 	options.args = {}
+	
+	-- Load all the existing options first
 	options.args.threat = {
 		order = 0,
 		type = "group",
@@ -509,17 +511,21 @@ local function LoadOptions()
 			}
 		}
 	}
-	-- stacking in 3.3.5 already exists by default in interface options
-	--options.args.stacking = {
-		--order = 9,
-		--type = "group",
-		--get = GetValue,
-		--set = SetValue,
-		--name = L["Stacking"],
-		--args = NotPlater.ConfigPrototypes.NameplateStacking,
-	--}
+	
+	-- Add Guild Cache only if the prototypes exist
+	if NotPlater.ConfigPrototypes.GuildCache then
+		options.args.guildCache = {
+			order = 8,
+			type = "group",
+			name = L["Guild Cache"],
+			get = GetValue,
+			set = SetValue,
+			args = NotPlater.ConfigPrototypes.GuildCache
+		}
+	end
+	
 	options.args.simulator = {
-		order = 10,
+		order = 11,
 		type = "group",
 		name = L["Simulator"],
 		get = GetValue,
@@ -528,7 +534,7 @@ local function LoadOptions()
 	}
 
 	options.args.profile = LibStub("AceDBOptions-3.0"):GetOptionsTable(NotPlater.db)
-	options.args.profile.order = 11
+	options.args.profile.order = 12
 end
 
 function Config:ToggleConfig()

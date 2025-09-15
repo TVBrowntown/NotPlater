@@ -269,6 +269,13 @@ function NotPlater:ConstructCastBar(frame)
 end
 
 function NotPlater:RegisterCastBarEvents(frame)
+	-- Safety check for frame existence
+	if not frame then
+		-- Create frame if it doesn't exist
+		frame = CreateFrame("Frame")
+		self.frame = frame
+	end
+	
 	frame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 	frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
 	frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
@@ -280,6 +287,9 @@ function NotPlater:RegisterCastBarEvents(frame)
 end
 
 function NotPlater:UnregisterCastBarEvents(frame)
+	-- Safety check for frame existence
+	if not frame then return end
+	
 	frame:UnregisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 	frame:UnregisterEvent("UNIT_SPELLCAST_DELAYED")
 	frame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_START")

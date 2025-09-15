@@ -200,5 +200,15 @@ function NotPlater:PrintHelp()
 end
 
 function NotPlater:Print(msg)
-	DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: " .. msg)
+    -- Safety check for nil message
+    if not msg then
+        msg = "No message"
+    end
+    
+    -- Convert to string if it's not already
+    if type(msg) ~= "string" then
+        msg = tostring(msg)
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: " .. msg)
 end

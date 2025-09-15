@@ -222,12 +222,23 @@ function NotPlater:OnNameplateMatch(healthFrame, group, ThreatLib)
 end
 
 function NotPlater:MouseoverThreatCheck(healthFrame, guid)
+	-- Safety check for nil healthFrame
+	if not healthFrame then
+		return
+	end
+	
+	-- Safety check for healthFrame.parent
+	local frame = healthFrame:GetParent()
+	if not frame then
+		return
+	end
+	
 	if UnitInParty("party1") or UnitInRaid("player") then
 		healthFrame.lastUnitMatch = "mouseover"
 		local group = self.raid or self.party
 		self:OnNameplateMatch(healthFrame, group)
 	else
-		local frame = healthFrame:GetParent().unitClass
+		-- Safety check for frame.unitClass
 		if self.db.profile.threat.nameplateColors.general.useClassColors and frame.unitClass then
 			healthFrame:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
 		else
