@@ -12,7 +12,7 @@ embeds-3.3.5.xml
 locales.xml
 
 # Core
-NotPlater-3.3.5.lua
+NotPlater.lua
 
 # Config and utility functions
 misc\simulatorFrame-3.3.5.lua
