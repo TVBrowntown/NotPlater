@@ -191,7 +191,15 @@ end
 
 function NotPlater:TargetCheck(frame)
     local isTarget = NotPlater:IsTarget(frame)
-    if(isTarget) then
+    
+    -- Cache the target state to avoid redundant processing
+    if frame.wasTarget == isTarget then
+        return
+    end
+    
+    frame.wasTarget = isTarget
+    
+    if isTarget then
         NotPlater:TargetOnTarget(frame)
         NotPlater:SetTargetFrameStrata(frame)
         NotPlater:CastCheck(frame)
@@ -199,14 +207,33 @@ function NotPlater:TargetCheck(frame)
         NotPlater:TargetOnNonTarget(frame)
         NotPlater:SetNormalFrameStrata(frame)
     end
-    NotPlater:ScaleHealthBar(frame.healthBar, isTarget)
-    NotPlater:ScaleCastBar(frame.castBar, isTarget)
-    NotPlater:ScaleNameText(frame.nameText, isTarget)
-    NotPlater:ScaleTargetTargetText(frame.targetTargetText, isTarget)
-    NotPlater:ScaleLevelText(frame.levelText, isTarget)
-    NotPlater:ScaleBossIcon(frame.bossIcon, isTarget)
-    NotPlater:ScaleRaidIcon(frame.raidIcon, isTarget)
-    NotPlater:ScaleThreatComponents(frame.healthBar,isTarget)
+    
+    -- Only scale if scaling is actually enabled for each component
+    local scaleConfig = NotPlater.db.profile.target.general.scale
+    if scaleConfig.healthBar then
+        NotPlater:ScaleHealthBar(frame.healthBar, isTarget)
+    end
+    if scaleConfig.castBar then
+        NotPlater:ScaleCastBar(frame.castBar, isTarget)
+    end
+    if scaleConfig.nameText then
+        NotPlater:ScaleNameText(frame.nameText, isTarget)
+    end
+    if scaleConfig.targetTargetText then
+        NotPlater:ScaleTargetTargetText(frame.targetTargetText, isTarget)
+    end
+    if scaleConfig.levelText then
+        NotPlater:ScaleLevelText(frame.levelText, isTarget)
+    end
+    if scaleConfig.bossIcon then
+        NotPlater:ScaleBossIcon(frame.bossIcon, isTarget)
+    end
+    if scaleConfig.raidIcon then
+        NotPlater:ScaleRaidIcon(frame.raidIcon, isTarget)
+    end
+    if scaleConfig.threat then
+        NotPlater:ScaleThreatComponents(frame.healthBar, isTarget)
+    end
 end
 
 function NotPlater:ConstructTarget(frame)

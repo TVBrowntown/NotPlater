@@ -151,33 +151,35 @@ local function SafeInitialize()
         local numMembers = GetNumGuildMembers()
         if not numMembers or numMembers == 0 then return end
         
-        -- Clear existing cache
-        for k in pairs(guildRoster) do
-            guildRoster[k] = nil
-        end
+        -- Clear existing cache more efficiently
+        guildRoster = {}
         
         -- Populate cache with current roster
         local membersAdded = 0
         for i = 1, numMembers do
             local name, rank, rankIndex, level, class, zone, note, officernote, online, status, classFileName = GetGuildRosterInfo(i)
             
-            if name and class and classFileName and RAID_CLASS_COLORS[classFileName] then
-                guildRoster[name] = {
-                    class = class,
-                    classFileName = classFileName,
-                    level = level,
-                    rank = rank,
-                    rankIndex = rankIndex,
-                    online = online,
-                    classColor = RAID_CLASS_COLORS[classFileName]
-                }
-                membersAdded = membersAdded + 1
+            if name and class and classFileName then
+                local classColor = RAID_CLASS_COLORS[classFileName]
+                if classColor then
+                    guildRoster[name] = {
+                        class = class,
+                        classFileName = classFileName,
+                        level = level,
+                        rank = rank,
+                        rankIndex = rankIndex,
+                        online = online,
+                        classColor = classColor
+                    }
+                    membersAdded = membersAdded + 1
+                end
             end
         end
         
-        -- Safe print
-        if NotPlater.Print then
-            NotPlater:Print(string.format("Guild roster updated: %d members cached", membersAdded))
+        lastUpdateTime = GetTime()
+        
+        if NotPlater.db and NotPlater.db.profile and NotPlater.db.profile.guildCache.general.showCacheMessages then
+            SafePrint(string.format("Guild roster updated: %d members cached", membersAdded))
         end
     end
 

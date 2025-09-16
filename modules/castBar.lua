@@ -20,11 +20,22 @@ end
 
 function NotPlater:CastBarOnUpdate(elapsed)
     local castBarConfig = NotPlater.db.profile.castBar
+    
+    -- Early exit if not target
 	if not NotPlater:IsTarget(self:GetParent()) then
 		self.casting = nil
 		self.channeling = nil
 		self:Hide()
-	elseif self.casting then
+		return
+	end
+	
+	local currentTime = GetTime()
+	
+	-- Throttle updates to reduce CPU usage (update display every 0.05 seconds)
+	if not self.lastDisplayUpdate then self.lastDisplayUpdate = 0 end
+	local shouldUpdateDisplay = (currentTime - self.lastDisplayUpdate) >= 0.05
+	
+	if self.casting then
 		self.value = self.value + elapsed
 		if self.value >= self.maxValue then
 			self:SetValue(self.maxValue)
@@ -34,17 +45,21 @@ function NotPlater:CastBarOnUpdate(elapsed)
 		end
 		self:SetValue(self.value)
 
-        if castBarConfig.spellTimeText.general.displayType == "crtmax" then
-            self.spellTimeText:SetFormattedText("%.1f / %.1f", self.value, self.maxValue)
-        elseif castBarConfig.spellTimeText.general.displayType == "crt" then
-            self.spellTimeText:SetFormattedText("%.1f", self.value)
-        elseif castBarConfig.spellTimeText.general.displayType == "percent" then
-            self.spellTimeText:SetFormattedText("%d%%", self.value / self.maxValue * 100)
-        elseif castBarConfig.spellTimeText.general.displayType == "timeleft" then
-            self.spellTimeText:SetFormattedText("%.1f", self.maxValue - self.value)
-        else
-            self.spellTimeText:SetText("")
-        end
+		-- Only update text display when necessary
+		if shouldUpdateDisplay then
+			if castBarConfig.spellTimeText.general.displayType == "crtmax" then
+				self.spellTimeText:SetFormattedText("%.1f / %.1f", self.value, self.maxValue)
+			elseif castBarConfig.spellTimeText.general.displayType == "crt" then
+				self.spellTimeText:SetFormattedText("%.1f", self.value)
+			elseif castBarConfig.spellTimeText.general.displayType == "percent" then
+				self.spellTimeText:SetFormattedText("%d%%", self.value / self.maxValue * 100)
+			elseif castBarConfig.spellTimeText.general.displayType == "timeleft" then
+				self.spellTimeText:SetFormattedText("%.1f", self.maxValue - self.value)
+			else
+				self.spellTimeText:SetText("")
+			end
+			self.lastDisplayUpdate = currentTime
+		end
 	elseif self.channeling then
 		self.value = self.value - elapsed
 		if self.value <= 0 then
@@ -54,21 +69,25 @@ function NotPlater:CastBarOnUpdate(elapsed)
 		end
 		self:SetValue(self.value)
 
-        if castBarConfig.spellTimeText.general.displayType == "crtmax" then
-            self.spellTimeText:SetFormattedText("%.1f / %.1f", self.value, self.maxValue)
-        elseif castBarConfig.spellTimeText.general.displayType == "crt" then
-            self.spellTimeText:SetFormattedText("%.1f", self.value)
-        elseif castBarConfig.spellTimeText.general.displayType == "percent" then
-            self.spellTimeText:SetFormattedText("%d%%", self.value / self.maxValue * 100)
-        elseif castBarConfig.spellTimeText.general.displayType == "timeleft" then
-            self.spellTimeText:SetFormattedText("%.1f", self.value - self.maxValue)
-        else
-            self.spellTimeText:SetText("")
-        end
+		-- Only update text display when necessary
+		if shouldUpdateDisplay then
+			if castBarConfig.spellTimeText.general.displayType == "crtmax" then
+				self.spellTimeText:SetFormattedText("%.1f / %.1f", self.value, self.maxValue)
+			elseif castBarConfig.spellTimeText.general.displayType == "crt" then
+				self.spellTimeText:SetFormattedText("%.1f", self.value)
+			elseif castBarConfig.spellTimeText.general.displayType == "percent" then
+				self.spellTimeText:SetFormattedText("%d%%", self.value / self.maxValue * 100)
+			elseif castBarConfig.spellTimeText.general.displayType == "timeleft" then
+				self.spellTimeText:SetFormattedText("%.1f", self.value - self.maxValue)
+			else
+				self.spellTimeText:SetText("")
+			end
+			self.lastDisplayUpdate = currentTime
+		end
 	else
 		self:Hide()
 	end
-	self.lastUpdate = GetTime()
+	self.lastUpdate = currentTime
 end
 
 function NotPlater:CastBarOnCast(frame, event, unit)

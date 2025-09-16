@@ -18,18 +18,29 @@ function NotPlater:HealthOnValueChanged(oldHealthBar, value)
 		return
 	end
 	
+	-- Only update if value actually changed
+	if healthFrame.lastValue == value and healthFrame.lastMaxValue == maxValue then
+		return
+	end
+	
 	-- Set min/max values before setting the current value to avoid race conditions
 	healthFrame:SetMinMaxValues(0, maxValue)
 	healthFrame:SetValue(value)
+	
+	-- Cache the values to avoid redundant updates
+	healthFrame.lastValue = value
+	healthFrame.lastMaxValue = maxValue
 
 	-- Update health text if it exists
 	if healthFrame.healthText then
-		if healthBarConfig.healthText.general.displayType == "minmax" then
-			if( maxValue == 100 ) then
+		local displayType = healthBarConfig.healthText.general.displayType
+		
+		if displayType == "minmax" then
+			if maxValue == 100 then
 				healthFrame.healthText:SetFormattedText("%d%% / %d%%", value, maxValue)
 			else
-				if(maxValue > 1000) then
-					if(value > 1000) then
+				if maxValue > 1000 then
+					if value > 1000 then
 						healthFrame.healthText:SetFormattedText("%.1fk / %.1fk", value / 1000, maxValue / 1000)
 					else
 						healthFrame.healthText:SetFormattedText("%d / %.1fk", value, maxValue / 1000)
@@ -38,13 +49,14 @@ function NotPlater:HealthOnValueChanged(oldHealthBar, value)
 					healthFrame.healthText:SetFormattedText("%d / %d", value, maxValue)
 				end
 			end
-		elseif healthBarConfig.healthText.general.displayType == "both" then
-			if(value > 1000) then
-				healthFrame.healthText:SetFormattedText("%.1fk (%d%%)", value/1000, math.floor(value/maxValue * 100))
+		elseif displayType == "both" then
+			local percentage = math.floor(value/maxValue * 100)
+			if value > 1000 then
+				healthFrame.healthText:SetFormattedText("%.1fk (%d%%)", value/1000, percentage)
 			else
-				healthFrame.healthText:SetFormattedText("%d (%d%%)", value, math.floor(value/maxValue * 100))
+				healthFrame.healthText:SetFormattedText("%d (%d%%)", value, percentage)
 			end
-		elseif healthBarConfig.healthText.general.displayType == "percent" then
+		elseif displayType == "percent" then
 			healthFrame.healthText:SetFormattedText("%d%%", math.floor(value / maxValue * 100))
 		else
 			healthFrame.healthText:SetText("")

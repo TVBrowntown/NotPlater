@@ -264,18 +264,24 @@ function NotPlater:MouseoverThreatCheck(healthFrame, guid)
 		return
 	end
 	
+	-- Early exit if not in combat and mouseover updates are disabled
+	if not self.db.profile.threat.general.enableMouseoverUpdate then
+		return
+	end
+	
+	-- Only process if we're in a group
 	if UnitInParty("party1") or UnitInRaid("player") then
 		healthFrame.lastUnitMatch = "mouseover"
 		local group = self.raid or self.party
-		self:OnNameplateMatch(healthFrame, group)
+		if group then
+			self:OnNameplateMatch(healthFrame, group)
+		end
 	else
-		-- Safety check for frame.unitClass
+		-- Apply class colors or default colors when solo
 		if self.db.profile.threat.nameplateColors.general.useClassColors and frame.unitClass then
 			healthFrame:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
-		else
-			if self.db.profile.healthBar.statusBar.general.enable then
-				healthFrame:SetStatusBarColor(self:GetColor(self.db.profile.healthBar.statusBar.general.color))
-			end
+		elseif self.db.profile.healthBar.statusBar.general.enable then
+			healthFrame:SetStatusBarColor(self:GetColor(self.db.profile.healthBar.statusBar.general.color))
 		end
 	end
 end
