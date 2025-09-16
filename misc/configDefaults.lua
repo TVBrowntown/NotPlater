@@ -28,6 +28,7 @@ function NotPlater:LoadDefaultConfig()
             threat = {
                 general = {
                     mode = "hdps",
+                    useColoredThreatNameplates = true,  -- Add this line
                     enableMouseoverUpdate = true
                 },
                 nameplateColors = {

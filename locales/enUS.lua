@@ -181,4 +181,8 @@ NotPlaterLocals = {
 	["Enable debug messages for party/raid cache operations"] = "Enable debug messages for party/raid cache operations",
 	["Only apply Class Colors to Players"] = "Only apply Class Colors to Players",
 	["When enabled, class colors will only be applied to player characters, not NPCs"] = "When enabled, class colors will only be applied to player characters, not NPCs",
+
+	["Use Colored Threat Nameplates"] = "Use Colored Threat Nameplates",
+	["Enable nameplate coloring based on threat. When disabled, nameplates will use default colors."] = "Enable nameplate coloring based on threat. When disabled, nameplates will use default colors.",
+	["Select your role for threat coloring"] = "Select your role for threat coloring",
 }
