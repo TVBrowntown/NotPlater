@@ -1,10 +1,10 @@
-# NotPlater Nameplate Addon for 2.4.3 and 3.3.5 Clients
+# NotPlater Nameplate Addon for 3.3.5 Client
 
 <p align="center">
   <img src="/images/demo.png">
 </p>
 
-Feature rich nameplate addon for TBC 2.4.3 that was designed based on the modern Plater addon. The main purpose is to provide extensive threat information on nameplates with fully configurable options. The core features include:
+Feature rich nameplate addon for WotLK 3.3.5a that was designed based on the modern Plater addon. The main purpose is to provide extensive threat information on nameplates with fully configurable options. The core features include:
 - Threat display with dps / healer and tank mode 
     - Nameplate Color Coding (including an option for class colors)
     - Threat Status Bar/Text
@@ -57,15 +57,10 @@ This frame simulates a nameplate and is meant to ease the process of configuring
 
 The image above shows the settings that are available for the addon. You can either access them over the minimap button or with the slash commands /np or /notplater. All features that have been described are adjustable in the settings dialog.
 
-## Installation 2.4.3
+## Installation 3.3.5
 
 Rename the downloaded folder to "NotPlater" and put the folder in the AddOns directory:\
 ..\Interface\AddOns\NotPlater
-
-## Installation 3.3.5
-
-Rename the downloaded folder to "NotPlater-3.3.5" and put the folder in the AddOns directory:\
-..\Interface\AddOns\NotPlater-3.3.5
 
 ## Acknowledgements
 
