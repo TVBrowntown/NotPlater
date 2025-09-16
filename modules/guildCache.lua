@@ -39,14 +39,20 @@ local function SafeInitialize()
     local guildRoster = {}
     local isInGuild = false
     local lastGuildUpdate = 0
+    local lastUpdateTime = nil
+    local refreshInProgress = false
     local initialized = false
     local GUILD_UPDATE_THROTTLE = 2
 
     -- Create our own frame for event handling
     local guildCacheFrame = CreateFrame("Frame", "NotPlaterGuildCacheFrame")
 
-    -- WoW API functions
-    local GetNumGuildMembers = GetNumGuildMembers
+    -- Safe print function that doesn't rely on NotPlater:Print
+    local function SafePrint(message)
+        if message and DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: " .. tostring(message))
+        end
+    end
     local GetGuildRosterInfo = GetGuildRosterInfo
     local IsInGuild = IsInGuild
     local GuildRoster = GuildRoster
@@ -81,9 +87,61 @@ local function SafeInitialize()
         
         local currentTime = GetTime()
         if currentTime - lastGuildUpdate >= GUILD_UPDATE_THROTTLE then
+            -- Set refresh status
+            refreshInProgress = true
+            
+            -- Debug message
+            if NotPlater.db and NotPlater.db.profile and NotPlater.db.profile.guildCache.advanced.debugMode then
+                SafePrint("Requesting guild roster from server...")
+            end
+            
             GuildRoster()
             lastGuildUpdate = currentTime
+            
+            -- Set up a delayed update check since GuildRoster() is async
+            local checkFrame = CreateFrame("Frame")
+            local elapsed = 0
+            local attempts = 0
+            local maxAttempts = 10
+            
+            checkFrame:SetScript("OnUpdate", function(self, elap)
+                elapsed = elapsed + elap
+                attempts = attempts + 1
+                
+                -- Check every 0.5 seconds for up to 5 seconds
+                if elapsed >= 0.5 then
+                    elapsed = 0
+                    
+                    local numMembers = GetNumGuildMembers()
+                    if numMembers and numMembers > 0 then
+                        -- Data is available, force an update
+                        self:SetScript("OnUpdate", nil)
+                        refreshInProgress = false
+                        GuildCache:UpdateRoster()
+                        
+                        if NotPlater.db and NotPlater.db.profile and NotPlater.db.profile.guildCache.advanced.debugMode then
+                            SafePrint("Guild roster data received after " .. tostring(attempts) .. " attempts")
+                        end
+                    elseif attempts >= maxAttempts then
+                        -- Give up after max attempts
+                        self:SetScript("OnUpdate", nil)
+                        refreshInProgress = false
+                        SafePrint("Guild roster request timed out. Try again in a moment.")
+                    end
+                end
+            end)
+        else
+            if NotPlater.Print then
+                local remaining = GUILD_UPDATE_THROTTLE - (currentTime - lastGuildUpdate)
+                local message = "Guild roster update throttled. Try again in " .. string.format("%.1f", remaining) .. " seconds."
+                SafePrint(message)
+            end
         end
+    end
+
+    -- Check if refresh is in progress
+    function GuildCache:IsRefreshInProgress()
+        return refreshInProgress
     end
 
     -- Update the guild roster cache
@@ -118,7 +176,7 @@ local function SafeInitialize()
         end
         
         -- Safe print
-        if NotPlater.Print and NotPlater.db.profile.guildCache.general.showCacheMessages == true then
+        if NotPlater.Print then
             NotPlater:Print(string.format("Guild roster updated: %d members cached", membersAdded))
         end
     end
@@ -184,8 +242,14 @@ local function SafeInitialize()
         local playerName = nameText:GetText()
         if not playerName then return end
         
-        -- First try the guild cache
-        if self:ApplyGuildClassColors(frame, playerName) then
+        -- Guild cache only applies to players anyway, so this is always valid
+        -- But check the setting for consistency
+        if NotPlater.db.profile.threat.nameplateColors.general.playersOnly then
+            -- Guild members are always players, so this is fine
+            if self:ApplyGuildClassColors(frame, playerName) then
+                return
+            end
+        elseif self:ApplyGuildClassColors(frame, playerName) then
             return
         end
         
@@ -227,7 +291,7 @@ local function SafeInitialize()
     function GuildCache:Initialize()
         if initialized then return end
         
-        if DEFAULT_CHAT_FRAME and NotPlater.db.profile.guildCache.advanced.debugMode == true then
+        if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Guild Cache: Starting initialization...")
         end
         
@@ -239,7 +303,7 @@ local function SafeInitialize()
         guildCacheFrame:RegisterEvent("PLAYER_GUILD_UPDATE")
         guildCacheFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
         
-        if DEFAULT_CHAT_FRAME and NotPlater.db.profile.guildCache.advanced.debugMode == true then
+        if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Guild Cache: Events registered")
         end
         
@@ -249,19 +313,19 @@ local function SafeInitialize()
         -- Check if we're in a guild and update roster
         self:UpdateGuildStatus()
         
-        if DEFAULT_CHAT_FRAME and NotPlater.db.profile.guildCache.advanced.debugMode == true then
+        if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Guild Cache: Guild status checked, isInGuild = " .. tostring(isInGuild))
         end
         
         -- If already in a guild, request initial roster
         if isInGuild then
-            if DEFAULT_CHAT_FRAME and NotPlater.db.profile.guildCache.advanced.debugMode == true then
+            if DEFAULT_CHAT_FRAME then
                 DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Guild Cache: Requesting initial guild roster...")
             end
             self:RequestGuildRoster()
         end
         
-        if DEFAULT_CHAT_FRAME and NotPlater.db.profile.guildCache.advanced.debugMode == true then
+        if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Guild Cache: Initialization complete")
         end
     end

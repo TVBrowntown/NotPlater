@@ -52,26 +52,35 @@ function NotPlater:SetupFrameScripts()
 
 	-- Set up the OnEvent script
 	self.frame:SetScript("OnEvent", function(self, event, unit)
-		for frame in pairs(frames) do
-			if frame:IsShown() then
-				if unit == "target" then
-					if NotPlater:IsTarget(frame) then
-						frame.healthBar.lastUnitMatch = "target"
-						NotPlater:CastBarOnCast(frame, event, unit)
-					end
-				else
-					local nameText, levelText = select(7, frame:GetRegions())
-					local name = nameText:GetText()
-					local level = levelText:GetText()
-					local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
-					local healthValue = frame.healthBar:GetValue()
-					if name == UnitName(unit) and level == tostring(UnitLevel(unit)) and healthValue == UnitHealth(unit) and healthValue ~= healthMaxValue then
-						frame.healthBar.lastUnitMatch = unit
-						NotPlater:CastBarOnCast(frame, event, unit)
-					end
-				end
-			end
-		end
+	    for frame in pairs(frames) do
+	        if frame:IsShown() then
+	            if unit == "target" then
+	                -- Only show cast bar on the actual target nameplate
+	                if NotPlater:IsTarget(frame) then
+	                    frame.healthBar.lastUnitMatch = "target"
+	                    NotPlater:CastBarOnCast(frame, event, unit)
+	                else
+	                    -- Hide cast bar on non-target nameplates
+	                    if frame.castBar and frame.castBar:IsShown() then
+	                        frame.castBar:Hide()
+	                        frame.castBar.casting = nil
+	                        frame.castBar.channeling = nil
+	                    end
+	                end
+	            else
+	                -- For non-target units, use the existing matching logic
+	                local nameText, levelText = select(7, frame:GetRegions())
+	                local name = nameText:GetText()
+	                local level = levelText:GetText()
+	                local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
+	                local healthValue = frame.healthBar:GetValue()
+	                if name == UnitName(unit) and level == tostring(UnitLevel(unit)) and healthValue == UnitHealth(unit) and healthValue ~= healthMaxValue then
+	                    frame.healthBar.lastUnitMatch = unit
+	                    NotPlater:CastBarOnCast(frame, event, unit)
+	                end
+	            end
+	        end
+	    end
 	end)
 end
 
@@ -135,10 +144,17 @@ function NotPlater:PrepareFrame(frame)
 				end
 				if NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
 					if not self.unitClass then
-						-- Try guild cache first, then fallback to regular class check
-						if NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
-							NotPlater.GuildCache:EnhancedClassCheck(self)
-						else
+						-- Try party/raid cache first (most immediate)
+						local foundClass = false
+						if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
+							foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(self)
+						end
+						-- If not found in party/raid, try guild cache
+						if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
+							foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
+						end
+						-- Finally fallback to regular class check
+						if not foundClass then
 							NotPlater:ClassCheck(self)
 						end
 					end
@@ -220,39 +236,57 @@ function NotPlater:PLAYER_TARGET_CHANGED()
 end
 
 function NotPlater:ClassCheck(frame)
-	if frame.unitClass then return end
+    if frame.unitClass then return end
+    
+    -- Check if we should skip NPCs when playersOnly is enabled
+    local skipNPCs = self.db.profile.threat.nameplateColors.general.useClassColors and 
+                     self.db.profile.threat.nameplateColors.general.playersOnly
+    
+    if self:IsTarget(frame) then
+        if skipNPCs and not UnitIsPlayer("target") then
+            return -- Skip non-players when playersOnly is enabled
+        end
+        frame.unitClass = select(2, UnitClass("target"))
+        if frame.unitClass then frame.unitClass = RAID_CLASS_COLORS[frame.unitClass] end
+        return
+    end
 
-	if self:IsTarget(frame) then
-		frame.unitClass = select(2, UnitClass("target"))
-		if frame.unitClass then frame.unitClass = RAID_CLASS_COLORS[frame.unitClass] end
-		return
-	end
-
-	local nameText, levelText = select(7, frame:GetRegions())
-	local name = nameText:GetText()
-	local level = levelText:GetText()
-	--local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
-	local healthValue = frame.healthBar:GetValue()
-	local group = self.raid or self.party
-	if group then
-		for gMember,unitID in pairs(group) do
-			local targetString = unitID .. "-target"
-			if name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) and healthValue == UnitHealth(targetString) then
-				frame.unitClass = select(2, UnitClass("target"))
-				if frame.unitClass then frame.unitClass = RAID_CLASS_COLORS[frame.unitClass] end
-				return
-			end
-		end
-	end
-	if name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) and healthValue == UnitHealth("mouseover") then
-		frame.unitClass = select(2, UnitClass("mouseover"))
-		if frame.unitClass then frame.unitClass = RAID_CLASS_COLORS[frame.unitClass] end
-		return
-	end
-	if name == UnitName("focus") and level == tostring(UnitLevel("focus")) and healthValue == UnitHealth("focus") then
-		frame.unitClass = select(2, UnitClass("focus"))
-		if frame.unitClass then frame.unitClass = RAID_CLASS_COLORS[frame.unitClass] end
-	end
+    local nameText, levelText = select(7, frame:GetRegions())
+    local name = nameText:GetText()
+    local level = levelText:GetText()
+    local healthValue = frame.healthBar:GetValue()
+    local group = self.raid or self.party
+    
+    if group then
+        for gMember,unitID in pairs(group) do
+            local targetString = unitID .. "-target"
+            if name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) and healthValue == UnitHealth(targetString) then
+                if skipNPCs and not UnitIsPlayer(targetString) then
+                    return -- Skip non-players when playersOnly is enabled
+                end
+                frame.unitClass = select(2, UnitClass(targetString))
+                if frame.unitClass then frame.unitClass = RAID_CLASS_COLORS[frame.unitClass] end
+                return
+            end
+        end
+    end
+    
+    if name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) and healthValue == UnitHealth("mouseover") then
+        if skipNPCs and not UnitIsPlayer("mouseover") then
+            return -- Skip non-players when playersOnly is enabled
+        end
+        frame.unitClass = select(2, UnitClass("mouseover"))
+        if frame.unitClass then frame.unitClass = RAID_CLASS_COLORS[frame.unitClass] end
+        return
+    end
+    
+    if name == UnitName("focus") and level == tostring(UnitLevel("focus")) and healthValue == UnitHealth("focus") then
+        if skipNPCs and not UnitIsPlayer("focus") then
+            return -- Skip non-players when playersOnly is enabled
+        end
+        frame.unitClass = select(2, UnitClass("focus"))
+        if frame.unitClass then frame.unitClass = RAID_CLASS_COLORS[frame.unitClass] end
+    end
 end
 
 function NotPlater:UPDATE_MOUSEOVER_UNIT()

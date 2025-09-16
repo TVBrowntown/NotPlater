@@ -446,10 +446,20 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     name = L["Enable"],
                 },
                 useClassColors = {
-                    order = 0,
+                    order = 1,
                     type = "toggle",
                     width = "double",
                     name = L["Use Class Colors when Possible"],
+                },
+                playersOnly = {
+                    order = 2,
+                    type = "toggle",
+                    name = L["Only apply Class Colors to Players"],
+                    desc = L["When enabled, class colors will only be applied to player characters, not NPCs"],
+                    width = "double",
+                    disabled = function() 
+                        return not NotPlater.db.profile.threat.nameplateColors.general.useClassColors
+                    end,
                 },
             }
         },
@@ -984,6 +994,215 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     set = function(info, val) NotPlater.db.profile.guildCache.advanced.debugMode = val end,
                     disabled = function() 
                         return not NotPlater.db.profile.guildCache.general.enable 
+                    end,
+                },
+            },
+        },
+    }
+    ConfigPrototypes.PartyRaidCache = {
+        general = {
+            order = 0,
+            type = "group",
+            inline = true,
+            name = L["General"],
+            args = {
+                enable = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Enable Party/Raid Cache"],
+                    desc = L["Enable party and raid member caching for class colors"],
+                    width = "full",
+                    set = function(info, val)
+                        NotPlater.db.profile.partyRaidCache.general.enable = val
+                        if val and NotPlater.PartyRaidCache then
+                            NotPlater.PartyRaidCache:Initialize()
+                        elseif not val and NotPlater.PartyRaidCache then
+                            NotPlater.PartyRaidCache:ClearCache()
+                        end
+                        NotPlater:Reload()
+                    end,
+                    get = function(info)
+                        return NotPlater.db.profile.partyRaidCache.general.enable
+                    end,
+                },
+                usePartyRaidColors = {
+                    order = 1,
+                    type = "toggle",
+                    name = L["Use Party/Raid Class Colors"],
+                    desc = L["Apply class colors to party and raid member nameplates"],
+                    width = "full",
+                    disabled = function() 
+                        return not NotPlater.db.profile.partyRaidCache.general.enable 
+                    end,
+                },
+                showCacheMessages = {
+                    order = 2,
+                    type = "toggle",
+                    name = L["Show Cache Messages"],
+                    desc = L["Display chat messages when party/raid roster is updated"],
+                    disabled = function() 
+                        return not NotPlater.db.profile.partyRaidCache.general.enable 
+                    end,
+                },
+            },
+        },
+        statistics = {
+            order = 1,
+            type = "group",
+            inline = true,
+            name = L["Statistics"],
+            args = {
+                header = {
+                    order = 0,
+                    type = "header",
+                    name = L["Party/Raid Cache Information"],
+                },
+                memberCount = {
+                    order = 1,
+                    type = "description",
+                    name = function()
+                        if NotPlater.PartyRaidCache then
+                            local count = NotPlater.PartyRaidCache:GetMemberCount()
+                            return string.format(L["Cached Members: %d"], count)
+                        else
+                            return L["Party/Raid cache not initialized"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                groupStatus = {
+                    order = 2,
+                    type = "description",
+                    name = function()
+                        if NotPlater.PartyRaidCache then
+                            local groupType = NotPlater.PartyRaidCache:GetGroupType()
+                            if groupType == "raid" then
+                                return L["Currently in a Raid"]
+                            elseif groupType == "party" then
+                                return L["Currently in a Party"]
+                            else
+                                return L["Not in a group"]
+                            end
+                        else
+                            return L["Not in a group"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                lastUpdate = {
+                    order = 3,
+                    type = "description",
+                    name = function()
+                        if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.GetLastUpdateTime then
+                            local lastTime = NotPlater.PartyRaidCache:GetLastUpdateTime()
+                            if lastTime then
+                                return string.format(L["Last Update: %s"], date("%H:%M:%S", lastTime))
+                            else
+                                return L["Never updated"]
+                            end
+                        else
+                            return L["Update info not available"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                spacer1 = {
+                    order = 4,
+                    type = "description",
+                    name = " ",
+                },
+                memberListHeader = {
+                    order = 5,
+                    type = "header",
+                    name = L["Cached Group Members"],
+                },
+                memberList = {
+                    order = 6,
+                    type = "description",
+                    name = function()
+                        if not NotPlater.PartyRaidCache or not NotPlater.PartyRaidCache.GetMemberList then
+                            return L["Party/Raid cache not available"]
+                        end
+                        
+                        local members = NotPlater.PartyRaidCache:GetMemberList()
+                        if not members or #members == 0 then
+                            return L["No group members cached"]
+                        end
+                        
+                        -- Sort members by name
+                        table.sort(members, function(a, b) return a.name < b.name end)
+                        
+                        local lines = {}
+                        for i, member in ipairs(members) do
+                            local classColor = member.classColor
+                            local colorCode = ""
+                            if classColor then
+                                local r = math.floor(classColor.r * 255)
+                                local g = math.floor(classColor.g * 255)
+                                local b = math.floor(classColor.b * 255)
+                                colorCode = string.format("|cff%02x%02x%02x", r, g, b)
+                            end
+                            
+                            local line = string.format("%s%s|r - Level %d %s%s|r (%s)", 
+                                colorCode, 
+                                member.name, 
+                                member.level or 0,
+                                colorCode,
+                                member.class or "Unknown",
+                                member.online and "Online" or "Offline"
+                            )
+                            
+                            -- Add role/subgroup info for raids
+                            if member.subgroup then
+                                line = line .. " [Group " .. member.subgroup .. "]"
+                            end
+                            
+                            table.insert(lines, line)
+                        end
+                        
+                        return table.concat(lines, "\n")
+                    end,
+                    fontSize = "small",
+                    width = "full",
+                },
+                spacer2 = {
+                    order = 7,
+                    type = "description",
+                    name = " ",
+                },
+                refreshButton = {
+                    order = 8,
+                    type = "execute",
+                    name = L["Refresh Party/Raid Cache"],
+                    desc = L["Manually refresh the party/raid roster cache"],
+                    func = function()
+                        if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.UpdateRoster then
+                            NotPlater.PartyRaidCache:UpdateRoster()
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Party/Raid roster refreshed")
+                        end
+                    end,
+                    disabled = function() 
+                        return not NotPlater.db.profile.partyRaidCache.general.enable or 
+                               (not UnitInParty("player") and not UnitInRaid("player"))
+                    end,
+                },
+            },
+        },
+        advanced = {
+            order = 2,
+            type = "group",
+            inline = true,
+            name = L["Advanced"],
+            args = {
+                debugMode = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Debug Mode"],
+                    desc = L["Enable debug messages for party/raid cache operations"],
+                    get = function(info) return NotPlater.db.profile.partyRaidCache.advanced.debugMode end,
+                    set = function(info, val) NotPlater.db.profile.partyRaidCache.advanced.debugMode = val end,
+                    disabled = function() 
+                        return not NotPlater.db.profile.partyRaidCache.general.enable 
                     end,
                 },
             },

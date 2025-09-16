@@ -7,6 +7,7 @@ function NotPlater:LoadDefaultConfig()
                 general = {
                     enable = true,
                     useGuildClassColors = true,
+                    playersOnly = false,
                     showCacheMessages = true,
                 },
                 advanced = {
@@ -14,30 +15,39 @@ function NotPlater:LoadDefaultConfig()
                     debugMode = false,
                 },
             },
-            threat = {
-                general = {
-                mode = "hdps",
-                enableMouseoverUpdate = true
-            },
-            nameplateColors = {
+            partyRaidCache = {
                 general = {
                     enable = true,
-                    useClassColors = false,
-                    useGuildClassColors = true, -- NEW: Enable guild class colors
+                    usePartyRaidColors = true,
+                    showCacheMessages = true,
                 },
-                colors = {
-                    tank = {
-                        c1 = {0.5, 0.5, 1, 1},
-                        c2 = {1, 0.8, 0, 1},
-                        c3 = {1, 0.109, 0, 1}
-                    },
-                    hdps = {
-                        c1 = {1, 0.109, 0, 1},
-                        c2 = { 1, 0.8, 0, 1},
-                        c3 = {0.5, 0.5, 1, 1},
-                    }
-                }
+                advanced = {
+                    debugMode = false,
+                },
             },
+            threat = {
+                general = {
+                    mode = "hdps",
+                    enableMouseoverUpdate = true
+                },
+                nameplateColors = {
+                    general = {
+                        enable = true,
+                        useClassColors = true, -- This will work with guild cache
+                    },
+                    colors = {
+                        tank = {
+                            c1 = {0.5, 0.5, 1, 1},
+                            c2 = {1, 0.8, 0, 1},
+                            c3 = {1, 0.109, 0, 1}
+                        },
+                        hdps = {
+                            c1 = {1, 0.109, 0, 1},
+                            c2 = { 1, 0.8, 0, 1},
+                            c3 = {0.5, 0.5, 1, 1},
+                        }
+                    }
+                },
                 percent = {
                     statusBar = {
                         general = {

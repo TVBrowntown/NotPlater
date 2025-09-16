@@ -523,6 +523,17 @@ local function LoadOptions()
 			args = NotPlater.ConfigPrototypes.GuildCache
 		}
 	end
+
+	if NotPlater.ConfigPrototypes.PartyRaidCache then
+		options.args.partyRaidCache = {
+		    order = 9,
+		    type = "group",
+		    name = L["Party/Raid Cache"],
+		    get = GetValue,
+		    set = SetValue,
+		    args = NotPlater.ConfigPrototypes.PartyRaidCache
+		}
+	end
 	
 	options.args.simulator = {
 		order = 11,

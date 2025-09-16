@@ -194,14 +194,22 @@ function NotPlater:CastBarOnCast(frame, event, unit)
 end
 
 function NotPlater:CastCheck(frame)
-	if frame.castBar.casting or frame.castBar.channeling then
-		frame.castBar:Show()
-	else
-		self:CastBarOnCast(frame, "UNIT_SPELLCAST_START", "target")
-		if not frame.castBar.casting then
-			self:CastBarOnCast(frame, "UNIT_SPELLCAST_CHANNEL_START", "target")
-		end
-	end
+    -- Only show cast bar if this is actually the target
+    if not self:IsTarget(frame) then
+        frame.castBar:Hide()
+        frame.castBar.casting = nil
+        frame.castBar.channeling = nil
+        return
+    end
+    
+    if frame.castBar.casting or frame.castBar.channeling then
+        frame.castBar:Show()
+    else
+        self:CastBarOnCast(frame, "UNIT_SPELLCAST_START", "target")
+        if not frame.castBar.casting then
+            self:CastBarOnCast(frame, "UNIT_SPELLCAST_CHANNEL_START", "target")
+        end
+    end
 end
 
 function NotPlater:ScaleCastBar(castFrame, isTarget)
@@ -217,18 +225,15 @@ function NotPlater:ScaleCastBar(castFrame, isTarget)
 end
 
 function NotPlater:CastBarOnShow(frame)
-	local castFrame = frame.castBar
-	castFrame.casting = nil
-	castFrame.channeling = nil
-	NotPlater:CastCheck(frame)
-	-- Tried to make it reappear, but this does not really work since you can't track whether something was interrupted
-	--if castFrame.casting or castFrame.channeling then
-		--if castFrame.lastUpdate then
-			--castFrame.helper = self.CastBarOnUpdate
-			--castFrame:helper(GetTime() - castFrame.lastUpdate)
-		--end
-		--castFrame:Show()
-	--end
+    local castFrame = frame.castBar
+    castFrame.casting = nil
+    castFrame.channeling = nil
+    -- Only check casts if this is the target
+    if NotPlater:IsTarget(frame) then
+        NotPlater:CastCheck(frame)
+    else
+        castFrame:Hide()
+    end
 end
 
 function NotPlater:ConfigureCastBar(frame)

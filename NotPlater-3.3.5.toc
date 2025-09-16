@@ -31,3 +31,4 @@ modules\stacking.lua
 modules\target.lua
 modules\threat-3.3.5.lua
 modules\guildCache.lua
+modules\partyRaidCache.lua

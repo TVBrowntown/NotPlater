@@ -157,4 +157,28 @@ NotPlaterLocals = {
 	["Minimum seconds between guild roster requests"] = "Minimum seconds between guild roster requests",
 	["Debug Mode"] = "Debug Mode",
 	["Enable debug messages for guild cache operations"] = "Enable debug messages for guild cache operations",
+
+	-- Add these lines to your NotPlaterLocals table in enUS.lua
+	["Only apply Class Colors to Players"] = "Only apply Class Colors to Players",
+	["When enabled, class colors will only be applied to player characters, not NPCs"] = "When enabled, class colors will only be applied to player characters, not NPCs",
+
+	-- Party/Raid Cache localizations
+	["Party/Raid Cache"] = "Party/Raid Cache",
+	["Enable Party/Raid Cache"] = "Enable Party/Raid Cache",
+	["Enable party and raid member caching for class colors"] = "Enable party and raid member caching for class colors",
+	["Use Party/Raid Class Colors"] = "Use Party/Raid Class Colors",
+	["Apply class colors to party and raid member nameplates"] = "Apply class colors to party and raid member nameplates",
+	["Party/Raid Cache Information"] = "Party/Raid Cache Information",
+	["Party/Raid cache not initialized"] = "Party/Raid cache not initialized",
+	["Currently in a Raid"] = "Currently in a Raid",
+	["Currently in a Party"] = "Currently in a Party",
+	["Not in a group"] = "Not in a group",
+	["Cached Group Members"] = "Cached Group Members",
+	["Party/Raid cache not available"] = "Party/Raid cache not available",
+	["No group members cached"] = "No group members cached",
+	["Refresh Party/Raid Cache"] = "Refresh Party/Raid Cache",
+	["Manually refresh the party/raid roster cache"] = "Manually refresh the party/raid roster cache",
+	["Enable debug messages for party/raid cache operations"] = "Enable debug messages for party/raid cache operations",
+	["Only apply Class Colors to Players"] = "Only apply Class Colors to Players",
+	["When enabled, class colors will only be applied to player characters, not NPCs"] = "When enabled, class colors will only be applied to player characters, not NPCs",
 }
