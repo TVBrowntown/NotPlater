@@ -534,6 +534,17 @@ local function LoadOptions()
 		    args = NotPlater.ConfigPrototypes.PartyRaidCache
 		}
 	end
+
+	if NotPlater.ConfigPrototypes.RecentlySeenCache then
+		options.args.recentlySeenCache = {
+			order = 10,
+			type = "group",
+			name = L["Recently Seen Cache"],
+			get = GetValue,
+			set = SetValue,
+			args = NotPlater.ConfigPrototypes.RecentlySeenCache
+		}
+	end
 	
 	options.args.simulator = {
 		order = 11,

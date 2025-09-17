@@ -2,6 +2,18 @@ if not NotPlater then return end
 
 function NotPlater:LoadDefaultConfig()
     self.defaults = {
+        global = {
+            recentlySeenCache = {
+                data = {},
+                stats = {
+                    hits = 0,
+                    misses = 0,
+                    added = 0,
+                    pruned = 0
+                },
+                version = 1
+            }
+        },
         profile = {
             guildCache = {
                 general = {
@@ -20,6 +32,18 @@ function NotPlater:LoadDefaultConfig()
                     enable = true,
                     usePartyRaidColors = true,
                     showCacheMessages = true,
+                },
+                advanced = {
+                    debugMode = false,
+                },
+            },
+            recentlySeenCache = {
+                general = {
+                    enable = true,
+                    useRecentlySeenColors = true,
+                    showCacheMessages = false,
+                    pruneDays = 7,
+                    maxEntries = 500,
                 },
                 advanced = {
                     debugMode = false,

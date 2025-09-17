@@ -34,6 +34,19 @@ function NotPlater:OnInitialize()
 	
 	-- Set up frame scripts AFTER frame is created
 	self:SetupFrameScripts()
+
+	 -- Initialize caches after AceDB is ready
+    C_Timer.After(0.1, function()
+        if self.GuildCache and self.GuildCache.Initialize then
+            self.GuildCache:Initialize()
+        end
+        if self.PartyRaidCache and self.PartyRaidCache.Initialize then
+            self.PartyRaidCache:Initialize()
+        end
+        if self.RecentlySeenCache and self.RecentlySeenCache.Initialize then
+            self.RecentlySeenCache:Initialize()
+        end
+    end)
 end
 
 function NotPlater:CleanupDeadFrames()
@@ -130,6 +143,43 @@ function NotPlater:IsTarget(frame)
 	return nameText and targetName == nameText:GetText() and frame:GetAlpha() >= 0.99
 end
 
+function NotPlater:ImmediateCacheCheck(frame)
+	-- Quick cache check for immediate coloring
+	if not self.db.profile.threat.nameplateColors.general.useClassColors then
+		return false
+	end
+	
+	local nameText = select(7, frame:GetRegions())
+	if not nameText then return false end
+	
+	local playerName = nameText:GetText()
+	if not playerName then return false end
+	
+	-- Check caches in priority order
+	-- 1. Party/Raid cache
+	if self.PartyRaidCache and self.PartyRaidCache.EnhancedClassCheck then
+		if self.PartyRaidCache:EnhancedClassCheck(frame) then
+			return true
+		end
+	end
+	
+	-- 2. Guild cache  
+	if self.GuildCache and self.GuildCache.EnhancedClassCheck then
+		if self.GuildCache:EnhancedClassCheck(frame) then
+			return true
+		end
+	end
+	
+	-- 3. Recently seen cache
+	if self.RecentlySeenCache and self.RecentlySeenCache.EnhancedClassCheck then
+		if self.RecentlySeenCache:EnhancedClassCheck(frame) then
+			return true
+		end
+	end
+	
+	return false
+end
+
 function NotPlater:PrepareFrame(frame)
 	local threatGlow, healthBorder, castBorder, castNoStop, spellIcon, highlightTexture, nameText, levelText, dangerSkull, bossIcon, raidIcon = frame:GetRegions()
 	local health, cast = frame:GetChildren()
@@ -163,13 +213,89 @@ function NotPlater:PrepareFrame(frame)
 		health:Hide()
     
 		self:HookScript(frame, "OnShow", function(self)
+			-- Force clear ALL cached data when showing
 			self.unitClass = nil
+			self.unitClassFromCache = nil
+			self.recentlySeen = nil
+			self.guildMember = nil
+			self.partyRaidMember = nil
+			self.lastCheckedName = nil
+			
+			-- Get the current nameplate name
+			local nameText = select(7, self:GetRegions())
+			local playerName = nameText and nameText:GetText()
+			
+			if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+				DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnShow for: " .. (playerName or "unknown"))
+			end
+			
+			-- Immediate cache check on nameplate show
+			if playerName and NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
+				-- Check caches in priority order
+				local foundClass = false
+				
+				-- 1. Party/Raid cache (most immediate)
+				if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
+					foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(self)
+				end
+				
+				-- 2. Guild cache
+				if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
+					foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
+				end
+				
+				-- 3. Recently seen cache
+				if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
+					foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
+					if foundClass and NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+						DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnShow found " .. playerName .. " in Recently Seen Cache")
+					end
+				end
+				
+				-- Apply colors immediately if found
+				if self.unitClass and self.healthBar then
+					-- Force the color application
+					self.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
+					
+					-- Store the name we checked so we can verify in OnUpdate
+					self.lastCheckedName = playerName
+					
+					if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+						DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff33ff99NotPlater|r: OnShow applied color for %s: r=%.2f g=%.2f b=%.2f", 
+							playerName, self.unitClass.r, self.unitClass.g, self.unitClass.b))
+					end
+				else
+					if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+						DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnShow no class found for: " .. playerName)
+					end
+				end
+			end
+			
 			NotPlater:CastBarOnShow(self)
 			NotPlater:HealthBarOnShow(health)
 			NotPlater:StackingCheck(self)
 			NotPlater:ThreatComponentsOnShow(self)
 			NotPlater:TargetCheck(self)
 			self.targetChanged = true
+		end)
+		
+		-- Add OnHide to clear data
+		self:HookScript(frame, "OnHide", function(self)
+			-- Clear all class data when nameplate hides
+			self.unitClass = nil
+			self.unitClassFromCache = nil
+			self.recentlySeen = nil
+			self.guildMember = nil  
+			self.partyRaidMember = nil
+			self.wasTarget = nil
+			
+			if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+				local nameText = select(7, self:GetRegions())
+				if nameText then
+					local playerName = nameText:GetText()
+					DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnHide cleared data for: " .. (playerName or "unknown"))
+				end
+			end
 		end)
 
 		-- Simple OnUpdate that continuously hides default cast elements
@@ -204,8 +330,17 @@ function NotPlater:PrepareFrame(frame)
 					self.targetChanged = nil
 				end
 				
-				-- Only do class checking if we need class colors and don't have class cached
+				-- Only do class checking if we need class colors and don't already have a class
+				-- IMPORTANT: Check if we already have unitClass to avoid overriding cache colors
 				if NotPlater.db.profile.threat.nameplateColors.general.useClassColors and not self.unitClass then
+					local nameText = select(7, self:GetRegions())
+					local playerName = nameText and nameText:GetText()
+					
+					-- Debug logging
+					if playerName and NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+						DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnUpdate checking for: " .. playerName .. " (unitClass is nil)")
+					end
+					
 					-- Try party/raid cache first (most immediate)
 					local foundClass = false
 					if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
@@ -215,14 +350,39 @@ function NotPlater:PrepareFrame(frame)
 					if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
 						foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
 					end
+					-- Try recently seen cache
+					if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
+						foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
+					end
 					-- Finally fallback to regular class check
 					if not foundClass then
 						NotPlater:ClassCheck(self)
 					end
 					
 					-- Apply class colors if we found a class
-					if self.unitClass then
+					if self.unitClass and frame.healthBar then
 						frame.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
+						
+						if playerName and NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+							DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff33ff99NotPlater|r: OnUpdate applied color for %s: r=%.2f g=%.2f b=%.2f", 
+								playerName, self.unitClass.r, self.unitClass.g, self.unitClass.b))
+						end
+					end
+				elseif self.unitClass and frame.healthBar then
+					-- We already have class colors, just make sure they're applied
+					-- This handles the case where the health bar might have been reset
+					local currentR, currentG, currentB = frame.healthBar:GetStatusBarColor()
+					if math.abs(currentR - self.unitClass.r) > 0.01 or 
+					   math.abs(currentG - self.unitClass.g) > 0.01 or 
+					   math.abs(currentB - self.unitClass.b) > 0.01 then
+						-- Color doesn't match, reapply
+						frame.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
+						
+						if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+							local nameText = select(7, self:GetRegions())
+							local playerName = nameText and nameText:GetText()
+							DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff33ff99NotPlater|r: OnUpdate reapplied color for %s", playerName or "unknown"))
+						end
 					end
 				end
 				
@@ -311,6 +471,21 @@ function NotPlater:PLAYER_TARGET_CHANGED()
 	end
 end
 
+function NotPlater:ApplyUnitClassColor(frame)
+    -- Helper to apply class colors to a frame
+    if frame.unitClass and frame.healthBar then
+        frame.healthBar:SetStatusBarColor(
+            frame.unitClass.r,
+            frame.unitClass.g,
+            frame.unitClass.b,
+            1
+        )
+        return true
+    end
+    return false
+end
+
+-- WITH THE NEW VERSION that adds caching:
 function NotPlater:ClassCheck(frame)
     if frame.unitClass then return end
     
@@ -327,57 +502,97 @@ function NotPlater:ClassCheck(frame)
     
     if not name or not level then return end
     
+    -- Variables to store found class info
+    local foundClass = nil
+    local foundClassFileName = nil
+    local foundLevel = nil
+    local foundUnit = nil
+    
     -- Check target first as it's most common and fastest
     if self:IsTarget(frame) then
-        if skipNPCs and not UnitIsPlayer("target") then
-            return
+        if not (skipNPCs and not UnitIsPlayer("target")) then
+            local className, classFileName = UnitClass("target")
+            if classFileName and RAID_CLASS_COLORS[classFileName] then
+                frame.unitClass = RAID_CLASS_COLORS[classFileName]
+                foundClass = className
+                foundClassFileName = classFileName
+                foundLevel = UnitLevel("target")
+                foundUnit = "target"
+            end
         end
-        local _, classFileName = UnitClass("target")
-        if classFileName and RAID_CLASS_COLORS[classFileName] then
-            frame.unitClass = RAID_CLASS_COLORS[classFileName]
-        end
-        return
     end
 
     -- Check group members if in group
-    local group = self.raid or self.party
-    if group then
-        for gMember, unitID in pairs(group) do
-            local targetString = unitID .. "-target"
-            if name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) and healthValue == UnitHealth(targetString) then
-                if skipNPCs and not UnitIsPlayer(targetString) then
-                    return
+    if not frame.unitClass then
+        local group = self.raid or self.party
+        if group then
+            for gMember, unitID in pairs(group) do
+                local targetString = unitID .. "-target"
+                if name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) and healthValue == UnitHealth(targetString) then
+                    if not (skipNPCs and not UnitIsPlayer(targetString)) then
+                        local className, classFileName = UnitClass(targetString)
+                        if classFileName and RAID_CLASS_COLORS[classFileName] then
+                            frame.unitClass = RAID_CLASS_COLORS[classFileName]
+                            foundClass = className
+                            foundClassFileName = classFileName
+                            foundLevel = UnitLevel(targetString)
+                            foundUnit = targetString
+                        end
+                    end
+                    break
                 end
-                local _, classFileName = UnitClass(targetString)
-                if classFileName and RAID_CLASS_COLORS[classFileName] then
-                    frame.unitClass = RAID_CLASS_COLORS[classFileName]
-                end
-                return
             end
         end
     end
     
     -- Check mouseover
-    if name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) and healthValue == UnitHealth("mouseover") then
-        if skipNPCs and not UnitIsPlayer("mouseover") then
-            return
+    if not frame.unitClass then
+        if name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) and healthValue == UnitHealth("mouseover") then
+            if not (skipNPCs and not UnitIsPlayer("mouseover")) then
+                local className, classFileName = UnitClass("mouseover")
+                if classFileName and RAID_CLASS_COLORS[classFileName] then
+                    frame.unitClass = RAID_CLASS_COLORS[classFileName]
+                    foundClass = className
+                    foundClassFileName = classFileName
+                    foundLevel = UnitLevel("mouseover")
+                    foundUnit = "mouseover"
+                end
+            end
         end
-        local _, classFileName = UnitClass("mouseover")
-        if classFileName and RAID_CLASS_COLORS[classFileName] then
-            frame.unitClass = RAID_CLASS_COLORS[classFileName]
-        end
-        return
     end
     
     -- Check focus last
-    if name == UnitName("focus") and level == tostring(UnitLevel("focus")) and healthValue == UnitHealth("focus") then
-        if skipNPCs and not UnitIsPlayer("focus") then
-            return
+    if not frame.unitClass then
+        if name == UnitName("focus") and level == tostring(UnitLevel("focus")) and healthValue == UnitHealth("focus") then
+            if not (skipNPCs and not UnitIsPlayer("focus")) then
+                local className, classFileName = UnitClass("focus")
+                if classFileName and RAID_CLASS_COLORS[classFileName] then
+                    frame.unitClass = RAID_CLASS_COLORS[classFileName]
+                    foundClass = className
+                    foundClassFileName = classFileName
+                    foundLevel = UnitLevel("focus")
+                    foundUnit = "focus"
+                end
+            end
         end
-        local _, classFileName = UnitClass("focus")
-        if classFileName and RAID_CLASS_COLORS[classFileName] then
-            frame.unitClass = RAID_CLASS_COLORS[classFileName]
+    end
+    
+    -- If we found a player's class, add them to recently seen cache AND apply color
+    if foundClass and foundClassFileName and foundUnit then
+        -- Store the class on the frame
+        if not frame.unitClass then
+            frame.unitClass = RAID_CLASS_COLORS[foundClassFileName]
         end
+        
+        -- Only add players (not NPCs) to the cache
+        if UnitIsPlayer(foundUnit) then
+            if self.RecentlySeenCache and self.RecentlySeenCache.AddPlayer then
+                self.RecentlySeenCache:AddPlayer(name, foundClass, foundClassFileName, foundLevel)
+            end
+        end
+        
+        -- Apply color immediately
+        self:ApplyUnitClassColor(frame)
     end
 end
 

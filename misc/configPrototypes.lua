@@ -1223,4 +1223,238 @@ function ConfigPrototypes:LoadConfigPrototypes()
             },
         },
     }
+    ConfigPrototypes.RecentlySeenCache = {
+        general = {
+            order = 0,
+            type = "group",
+            inline = true,
+            name = L["General"],
+            args = {
+                enable = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Enable Recently Seen Cache"],
+                    desc = L["Cache players you've seen recently for faster class color detection"],
+                    width = "full",
+                    set = function(info, val)
+                        NotPlater.db.profile.recentlySeenCache.general.enable = val
+                        NotPlater:Reload()
+                    end,
+                    get = function(info)
+                        return NotPlater.db.profile.recentlySeenCache.general.enable
+                    end,
+                },
+                useRecentlySeenColors = {
+                    order = 1,
+                    type = "toggle",
+                    name = L["Use Recently Seen Class Colors"],
+                    desc = L["Apply class colors to recently seen players"],
+                    width = "full",
+                    disabled = function() 
+                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                    end,
+                },
+                pruneDays = {
+                    order = 2,
+                    type = "select",
+                    name = L["Keep Players For"],
+                    desc = L["How many days to keep players in the cache"],
+                    values = {
+                        [3] = L["3 days"],
+                        [5] = L["5 days"],
+                        [7] = L["7 days"],
+                        [9] = L["9 days"],
+                    },
+                    disabled = function() 
+                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                    end,
+                },
+                maxEntries = {
+                    order = 3,
+                    type = "range",
+                    name = L["Maximum Cache Size"],
+                    desc = L["Maximum number of players to keep in cache"],
+                    min = 100,
+                    max = 1000,
+                    step = 50,
+                    disabled = function() 
+                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                    end,
+                },
+                showCacheMessages = {
+                    order = 4,
+                    type = "toggle",
+                    name = L["Show Cache Messages"],
+                    desc = L["Display messages when the cache is updated"],
+                    disabled = function() 
+                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                    end,
+                },
+            },
+        },
+        statistics = {
+            order = 1,
+            type = "group",
+            inline = true,
+            name = L["Statistics"],
+            args = {
+                header = {
+                    order = 0,
+                    type = "header",
+                    name = L["Recently Seen Cache Information"],
+                },
+                cacheSize = {
+                    order = 1,
+                    type = "description",
+                    name = function()
+                        if NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.GetStatistics then
+                            local stats = NotPlater.RecentlySeenCache:GetStatistics()
+                            return string.format(L["Cached Players: %d"], stats.size)
+                        else
+                            return L["Recently Seen cache not initialized"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                hitRate = {
+                    order = 2,
+                    type = "description",
+                    name = function()
+                        if NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.GetStatistics then
+                            local stats = NotPlater.RecentlySeenCache:GetStatistics()
+                            return string.format(L["Cache Hit Rate: %.1f%%"], stats.hitRate)
+                        else
+                            return L["No statistics available"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                statistics = {
+                    order = 3,
+                    type = "description",
+                    name = function()
+                        if NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.GetStatistics then
+                            local stats = NotPlater.RecentlySeenCache:GetStatistics()
+                            return string.format(L["Hits: %d | Misses: %d | Added: %d | Pruned: %d"], 
+                                stats.hits, stats.misses, stats.added, stats.pruned)
+                        else
+                            return ""
+                        end
+                    end,
+                    fontSize = "small",
+                },
+                spacer1 = {
+                    order = 4,
+                    type = "description",
+                    name = " ",
+                },
+                recentPlayersHeader = {
+                    order = 5,
+                    type = "header",
+                    name = L["Recently Seen Players"],
+                },
+                recentPlayers = {
+                    order = 6,
+                    type = "description",
+                    name = function()
+                        if not NotPlater.RecentlySeenCache or not NotPlater.RecentlySeenCache.GetCacheList then
+                            return L["Recently Seen cache not available"]
+                        end
+                        
+                        local players = NotPlater.RecentlySeenCache:GetCacheList()
+                        if not players or #players == 0 then
+                            return L["No recently seen players cached"]
+                        end
+                        
+                        local lines = {}
+                        local currentTime = GetTime()
+                        for i, player in ipairs(players) do
+                            local classColor = player.classColor
+                            local colorCode = ""
+                            if classColor then
+                                local r = math.floor(classColor.r * 255)
+                                local g = math.floor(classColor.g * 255)
+                                local b = math.floor(classColor.b * 255)
+                                colorCode = string.format("|cff%02x%02x%02x", r, g, b)
+                            end
+                            
+                            -- Calculate time ago
+                            local timeAgo = currentTime - player.lastSeen
+                            local timeString = ""
+                            if timeAgo < 60 then
+                                timeString = "< 1 min ago"
+                            elseif timeAgo < 3600 then
+                                timeString = string.format("%d min ago", math.floor(timeAgo / 60))
+                            elseif timeAgo < 86400 then
+                                timeString = string.format("%.1f hours ago", timeAgo / 3600)
+                            else
+                                timeString = string.format("%.1f days ago", timeAgo / 86400)
+                            end
+                            
+                            local line = string.format("%s%s|r - Level %d %s%s|r (%s)", 
+                                colorCode, 
+                                player.name, 
+                                player.level or 0,
+                                colorCode,
+                                player.class or "Unknown",
+                                timeString
+                            )
+                            table.insert(lines, line)
+                            
+                            -- Limit to first 30 players
+                            if i >= 30 then
+                                table.insert(lines, string.format("... and %d more players", #players - 30))
+                                break
+                            end
+                        end
+                        
+                        return table.concat(lines, "\n")
+                    end,
+                    fontSize = "small",
+                    width = "full",
+                },
+                spacer2 = {
+                    order = 7,
+                    type = "description",
+                    name = " ",
+                },
+                clearButton = {
+                    order = 8,
+                    type = "execute",
+                    name = L["Clear Recently Seen Cache"],
+                    desc = L["Clear all recently seen players from cache"],
+                    func = function()
+                        if NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.ClearCache then
+                            NotPlater.RecentlySeenCache:ClearCache()
+                            DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Recently seen cache cleared")
+                        end
+                    end,
+                    confirm = true,
+                    confirmText = L["Are you sure you want to clear the recently seen cache?"],
+                    disabled = function() 
+                        return not NotPlater.db.profile.recentlySeenCache.general.enable
+                    end,
+                },
+            },
+        },
+        advanced = {
+            order = 2,
+            type = "group",
+            inline = true,
+            name = L["Advanced"],
+            args = {
+                debugMode = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Debug Mode"],
+                    desc = L["Enable debug messages for recently seen cache operations"],
+                    get = function(info) return NotPlater.db.profile.recentlySeenCache.advanced.debugMode end,
+                    set = function(info, val) NotPlater.db.profile.recentlySeenCache.advanced.debugMode = val end,
+                    disabled = function() 
+                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                    end,
+                },
+            },
+        },
+    }
 end
