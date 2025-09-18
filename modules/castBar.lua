@@ -31,9 +31,12 @@ function NotPlater:CastBarOnUpdate(elapsed)
 	
 	local currentTime = GetTime()
 	
-	-- Throttle updates to reduce CPU usage (update display every 0.05 seconds)
+	-- Initialize display tracking
 	if not self.lastDisplayUpdate then self.lastDisplayUpdate = 0 end
-	local shouldUpdateDisplay = (currentTime - self.lastDisplayUpdate) >= 0.05
+	if not self.lastDisplayValue then self.lastDisplayValue = 0 end
+	
+	-- Throttle text updates to reduce CPU usage
+	local shouldUpdateDisplay = (currentTime - self.lastDisplayUpdate) >= 0.1
 	
 	if self.casting then
 		self.value = self.value + elapsed
@@ -45,18 +48,23 @@ function NotPlater:CastBarOnUpdate(elapsed)
 		end
 		self:SetValue(self.value)
 
-		-- Only update text display when necessary
+		-- Only update text when value changes significantly
 		if shouldUpdateDisplay then
-			if castBarConfig.spellTimeText.general.displayType == "crtmax" then
-				self.spellTimeText:SetFormattedText("%.1f / %.1f", self.value, self.maxValue)
-			elseif castBarConfig.spellTimeText.general.displayType == "crt" then
-				self.spellTimeText:SetFormattedText("%.1f", self.value)
-			elseif castBarConfig.spellTimeText.general.displayType == "percent" then
-				self.spellTimeText:SetFormattedText("%d%%", self.value / self.maxValue * 100)
-			elseif castBarConfig.spellTimeText.general.displayType == "timeleft" then
-				self.spellTimeText:SetFormattedText("%.1f", self.maxValue - self.value)
-			else
-				self.spellTimeText:SetText("")
+			local newValue = math.floor(self.value * 10) / 10
+			if self.lastDisplayValue ~= newValue then
+				self.lastDisplayValue = newValue
+				
+				if castBarConfig.spellTimeText.general.displayType == "crtmax" then
+					self.spellTimeText:SetFormattedText("%.1f / %.1f", newValue, self.maxValue)
+				elseif castBarConfig.spellTimeText.general.displayType == "crt" then
+					self.spellTimeText:SetFormattedText("%.1f", newValue)
+				elseif castBarConfig.spellTimeText.general.displayType == "percent" then
+					self.spellTimeText:SetFormattedText("%d%%", newValue / self.maxValue * 100)
+				elseif castBarConfig.spellTimeText.general.displayType == "timeleft" then
+					self.spellTimeText:SetFormattedText("%.1f", self.maxValue - newValue)
+				else
+					self.spellTimeText:SetText("")
+				end
 			end
 			self.lastDisplayUpdate = currentTime
 		end
@@ -69,18 +77,23 @@ function NotPlater:CastBarOnUpdate(elapsed)
 		end
 		self:SetValue(self.value)
 
-		-- Only update text display when necessary
+		-- Only update text when value changes significantly
 		if shouldUpdateDisplay then
-			if castBarConfig.spellTimeText.general.displayType == "crtmax" then
-				self.spellTimeText:SetFormattedText("%.1f / %.1f", self.value, self.maxValue)
-			elseif castBarConfig.spellTimeText.general.displayType == "crt" then
-				self.spellTimeText:SetFormattedText("%.1f", self.value)
-			elseif castBarConfig.spellTimeText.general.displayType == "percent" then
-				self.spellTimeText:SetFormattedText("%d%%", self.value / self.maxValue * 100)
-			elseif castBarConfig.spellTimeText.general.displayType == "timeleft" then
-				self.spellTimeText:SetFormattedText("%.1f", self.value - self.maxValue)
-			else
-				self.spellTimeText:SetText("")
+			local newValue = math.floor(self.value * 10) / 10
+			if self.lastDisplayValue ~= newValue then
+				self.lastDisplayValue = newValue
+				
+				if castBarConfig.spellTimeText.general.displayType == "crtmax" then
+					self.spellTimeText:SetFormattedText("%.1f / %.1f", newValue, self.maxValue)
+				elseif castBarConfig.spellTimeText.general.displayType == "crt" then
+					self.spellTimeText:SetFormattedText("%.1f", newValue)
+				elseif castBarConfig.spellTimeText.general.displayType == "percent" then
+					self.spellTimeText:SetFormattedText("%d%%", newValue / self.maxValue * 100)
+				elseif castBarConfig.spellTimeText.general.displayType == "timeleft" then
+					self.spellTimeText:SetFormattedText("%.1f", newValue - self.maxValue)
+				else
+					self.spellTimeText:SetText("")
+				end
 			end
 			self.lastDisplayUpdate = currentTime
 		end

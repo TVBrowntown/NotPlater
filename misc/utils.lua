@@ -6,6 +6,10 @@ local unpack = unpack
 local slen = string.len
 local ssub = string.sub
 local tinsert = table.insert
+local math_abs = math.abs
+local string_format = string.format
+local string_len = string.len
+local string_sub = string.sub
 
 function NotPlater:GetColor(config)
 	return unpack(config)
@@ -18,7 +22,9 @@ end
 function NotPlater:SetupFontString(text, config)
 	if not text then return end
 
-	text:SetFont(self.SML:Fetch(self.SML.MediaType.FONT, config.general.name), config.general.size, config.general.border)
+	-- Cache font to avoid repeated fetches
+	local font = self.SML:Fetch(self.SML.MediaType.FONT, config.general.name)
+	text:SetFont(font, config.general.size, config.general.border)
 
 	-- Set color
 	if config.general.color then
@@ -27,16 +33,15 @@ function NotPlater:SetupFontString(text, config)
 
 	-- Set shadow
 	if config.shadow.enable then
-		if( not text.npOriginalShadow ) then
+		if not text.npOriginalShadow then
 			local x, y = text:GetShadowOffset()
 			local r, g, b, a = text:GetShadowColor()
-			
 			text.npOriginalShadow = {r = r, g = g, b = b, a = a, y = y, x = x}
 		end
 		
 		text:SetShadowColor(self:GetColor(config.shadow.color))
 		text:SetShadowOffset(config.shadow.xOffset, config.shadow.yOffset)
-	elseif text.npOriginalShadow then -- Restore original shadow
+	elseif text.npOriginalShadow then
 		text:SetShadowColor(text.npOriginalShadow.r, text.npOriginalShadow.g, text.npOriginalShadow.b, text.npOriginalShadow.a)
 		text:SetShadowOffset(text.npOriginalShadow.x, text.npOriginalShadow.y)
 		text.npOriginalShadow = nil
@@ -45,8 +50,8 @@ end
 
 function NotPlater:SetMaxLetterText(textObject, text, config)
 	local configMaxLength = config.general.maxLetters
-	if text and slen(text) > configMaxLength then
-		textObject:SetText(ssub(text, 1, configMaxLength) .. "...")
+	if text and string_len(text) > configMaxLength then
+		textObject:SetText(string_sub(text, 1, configMaxLength) .. "...")
 	else
 		textObject:SetText(text)
 	end
@@ -54,6 +59,30 @@ end
 
 function NotPlater:ScaleGeneralisedText(text, scalingFactor, config)
 	text:SetFont(self.SML:Fetch(self.SML.MediaType.FONT, config.general.name), config.general.size * scalingFactor, config.general.border)
+end
+
+function NotPlater:ConfigureGeneralisedStatusBar(bar, config)
+	-- Cache texture fetch to avoid repeated lookups
+	local statusBarTexture = self.SML:Fetch(self.SML.MediaType.STATUSBAR, config.general.texture)
+	bar:SetStatusBarTexture(statusBarTexture)
+
+	-- Set background
+	if config.background.enable then
+		local backgroundTexture = self.SML:Fetch(self.SML.MediaType.STATUSBAR, config.background.texture)
+		bar.background:SetTexture(backgroundTexture)
+		bar.background:SetVertexColor(self:GetColor(config.background.color))
+		bar.background:Show()
+	else
+		bar.background:Hide()
+	end
+
+	-- Set border
+	if config.border.enable then
+		self:ConfigureFullBorder(bar.border, bar, config.border)
+		bar.border:Show()
+	else
+		bar.border:Hide()
+	end
 end
 
 function NotPlater:ConfigureGeneralisedText(text, anchorFrame, config)

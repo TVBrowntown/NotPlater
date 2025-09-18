@@ -9,11 +9,10 @@ function NotPlater:HealthOnValueChanged(oldHealthBar, value)
 		return
 	end
 	
-	-- Clamp value to valid range to prevent health bar showing incorrect values
+	-- Clamp value to valid range
 	value = math.max(0, math.min(value, maxValue))
 
 	local healthFrame = oldHealthBar.healthBar
-	-- Ensure we have a valid health frame reference
 	if not healthFrame then
 		return
 	end
@@ -23,16 +22,24 @@ function NotPlater:HealthOnValueChanged(oldHealthBar, value)
 		return
 	end
 	
-	-- Set min/max values before setting the current value to avoid race conditions
+	-- Set min/max values before setting current value
 	healthFrame:SetMinMaxValues(0, maxValue)
 	healthFrame:SetValue(value)
 	
-	-- Cache the values to avoid redundant updates
+	-- Cache the values
 	healthFrame.lastValue = value
 	healthFrame.lastMaxValue = maxValue
 
-	-- Update health text if it exists
-	if healthFrame.healthText then
+	-- Throttle text updates to improve performance
+	local currentTime = GetTime()
+	if not healthFrame.lastTextUpdate then
+		healthFrame.lastTextUpdate = 0
+	end
+	
+	-- Only update text every 0.1 seconds
+	if healthFrame.healthText and (currentTime - healthFrame.lastTextUpdate) >= 0.1 then
+		healthFrame.lastTextUpdate = currentTime
+		
 		local displayType = healthBarConfig.healthText.general.displayType
 		
 		if displayType == "minmax" then

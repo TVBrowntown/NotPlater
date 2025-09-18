@@ -162,14 +162,16 @@ local function SafeInitialize()
             b = classColor.b
         }
         
-        -- Add or update the cache entry
+        -- Check if entry exists to determine if it's new
         local isNew = not cache[name]
+        
+        -- Add or update the cache entry
         cache[name] = {
             class = className,
             classFileName = classFileName,
             level = level or 0,
             lastSeen = GetTime(),
-            classColor = colorCopy  -- Use the copy, not the reference
+            classColor = colorCopy
         }
         
         if isNew then
@@ -178,19 +180,27 @@ local function SafeInitialize()
             -- Check cache size limit
             local settings = NotPlater.db.profile.recentlySeenCache.general
             local maxEntries = settings.maxEntries or 500
-            if self:GetCacheSize() > maxEntries then
-                self:RemoveOldestEntries(1)
+            local cacheSize = self:GetCacheSize()
+            
+            if cacheSize > maxEntries then
+                -- Remove oldest entry
+                local oldestName, oldestTime
+                for n, data in pairs(cache) do
+                    if not oldestTime or data.lastSeen < oldestTime then
+                        oldestTime = data.lastSeen
+                        oldestName = n
+                    end
+                end
+                if oldestName then
+                    cache[oldestName] = nil
+                    cacheStats.pruned = cacheStats.pruned + 1
+                end
             end
         end
         
-        -- Periodically save (every 10 additions)
+        -- Save periodically (every 10 additions)
         if cacheStats.added % 10 == 0 then
             self:SaveCache()
-        end
-        
-        if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-            SafePrint(string.format("Cache Debug: Added/Updated %s (%s) with color r=%.2f g=%.2f b=%.2f", 
-                name, className or "Unknown", colorCopy.r, colorCopy.g, colorCopy.b))
         end
         
         return true
@@ -306,8 +316,12 @@ local function SafeInitialize()
     function RecentlySeenCache:EnhancedClassCheck(frame)
         if not frame then return false end
         
-        -- Clear any old data first
-        frame.unitClassFromCache = nil
+        -- Early exit if disabled
+        if not NotPlater.db.profile.recentlySeenCache.general.enable or
+           not NotPlater.db.profile.recentlySeenCache.general.useRecentlySeenColors or
+           not NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
+            return false
+        end
         
         -- Get the name from the nameplate
         local nameText = select(7, frame:GetRegions())
@@ -316,23 +330,51 @@ local function SafeInitialize()
         local playerName = nameText:GetText()
         if not playerName then return false end
         
-        -- Debug logging
-        if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-            SafePrint("Cache Debug: Checking nameplate for: " .. playerName)
+        -- Check if we already processed this name
+        if frame.lastCheckedName == playerName and frame.unitClass then
+            return true
         end
         
-        -- Simple name-only match for cached players
-        local success = self:ApplyClassColors(frame, playerName)
+        -- Clear any existing class data first
+        frame.unitClassFromCache = nil
         
-        if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-            if success then
-                SafePrint("Cache Debug: Found and applied colors for: " .. playerName)
-            else
-                SafePrint("Cache Debug: No cache entry for: " .. playerName)
-            end
+        -- Get data from cache
+        local data = self:GetPlayerData(playerName)
+        if not data or not data.classColor then
+            return false
         end
         
-        return success
+        -- Make sure healthBar exists
+        if not frame.healthBar then
+            return false
+        end
+        
+        -- Create a fresh color copy for this frame
+        local colorCopy = {
+            r = data.classColor.r,
+            g = data.classColor.g,
+            b = data.classColor.b
+        }
+        
+        -- Verify the color values are valid
+        if not colorCopy.r or not colorCopy.g or not colorCopy.b then
+            return false
+        end
+        
+        -- Apply the color
+        frame.healthBar:SetStatusBarColor(colorCopy.r, colorCopy.g, colorCopy.b, 1)
+        
+        -- Store on the frame
+        frame.unitClass = colorCopy
+        frame.recentlySeen = {
+            class = data.class,
+            classFileName = data.classFileName,
+            level = data.level
+        }
+        frame.unitClassFromCache = true
+        frame.lastCheckedName = playerName
+        
+        return true
     end
 
     -- Save cache to SavedVariables (AceDB aware)

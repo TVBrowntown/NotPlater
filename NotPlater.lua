@@ -11,6 +11,8 @@ local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 local frames = {}
 local numChildren = -1
 
+local deadFramesCache = {}
+
 -- DO NOT create frame here - wait for OnInitialize
 
 function NotPlater:OnInitialize()
@@ -62,6 +64,7 @@ function NotPlater:CleanupDeadFrames()
         if frame.healthBar then
             frame.healthBar.lastValue = nil
             frame.healthBar.lastMaxValue = nil
+            frame.healthBar.lastTextUpdate = nil
         end
         frame.unitClass = nil
         frame.wasTarget = nil
@@ -76,8 +79,9 @@ function NotPlater:SetupFrameScripts()
 	
 	-- Set up the OnUpdate script with throttling
 	local updateThrottle = 0
-	local cleanupTimer = 0  -- Move this outside the OnUpdate function
-	local UPDATE_INTERVAL = 0.1 -- Update every 0.1 seconds instead of every frame
+	local cleanupTimer = 0
+	local UPDATE_INTERVAL = 0.1 -- Keep original timing for stability
+	local CLEANUP_INTERVAL = 30 -- Keep original timing
 	
 	self.frame:SetScript("OnUpdate", function(self, elapsed)
 		updateThrottle = updateThrottle + elapsed
@@ -91,44 +95,61 @@ function NotPlater:SetupFrameScripts()
 		
 		-- Add cleanup every 30 seconds
 		cleanupTimer = cleanupTimer + elapsed
-		if cleanupTimer >= 30 then
-		    NotPlater:CleanupDeadFrames()
-		    cleanupTimer = 0
+		if cleanupTimer >= CLEANUP_INTERVAL then
+			NotPlater:CleanupDeadFrames()
+			cleanupTimer = 0
 		end
 	end)
 
-	-- Set up the OnEvent script
+	-- Set up the OnEvent script (keep original structure)
 	self.frame:SetScript("OnEvent", function(self, event, unit)
-	    for frame in pairs(frames) do
-	        if frame:IsShown() then
-	            if unit == "target" then
-	                -- Only show cast bar on the actual target nameplate
-	                if NotPlater:IsTarget(frame) then
-	                    frame.healthBar.lastUnitMatch = "target"
-	                    NotPlater:CastBarOnCast(frame, event, unit)
-	                else
-	                    -- Hide cast bar on non-target nameplates
-	                    if frame.castBar and frame.castBar:IsShown() then
-	                        frame.castBar:Hide()
-	                        frame.castBar.casting = nil
-	                        frame.castBar.channeling = nil
-	                    end
-	                end
-	            else
-	                -- For non-target units, use the existing matching logic
-	                local nameText, levelText = select(7, frame:GetRegions())
-	                local name = nameText:GetText()
-	                local level = levelText:GetText()
-	                local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
-	                local healthValue = frame.healthBar:GetValue()
-	                if name == UnitName(unit) and level == tostring(UnitLevel(unit)) and healthValue == UnitHealth(unit) and healthValue ~= healthMaxValue then
-	                    frame.healthBar.lastUnitMatch = unit
-	                    NotPlater:CastBarOnCast(frame, event, unit)
-	                end
-	            end
-	        end
-	    end
+		for frame in pairs(frames) do
+			if frame:IsShown() then
+				if unit == "target" then
+					-- Only show cast bar on the actual target nameplate
+					if NotPlater:IsTarget(frame) then
+						frame.healthBar.lastUnitMatch = "target"
+						NotPlater:CastBarOnCast(frame, event, unit)
+					else
+						-- Hide cast bar on non-target nameplates
+						if frame.castBar and frame.castBar:IsShown() then
+							frame.castBar:Hide()
+							frame.castBar.casting = nil
+							frame.castBar.channeling = nil
+						end
+					end
+				else
+					-- For non-target units, use the existing matching logic
+					local nameText, levelText = select(7, frame:GetRegions())
+					if nameText and levelText then
+						local name = nameText:GetText()
+						local level = levelText:GetText()
+						local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
+						local healthValue = frame.healthBar:GetValue()
+						if name and level and healthValue and healthMaxValue and 
+						   name == UnitName(unit) and 
+						   level == tostring(UnitLevel(unit)) and 
+						   healthValue == UnitHealth(unit) and 
+						   healthValue ~= healthMaxValue then
+							frame.healthBar.lastUnitMatch = unit
+							NotPlater:CastBarOnCast(frame, event, unit)
+						end
+					end
+				end
+			end
+		end
 	end)
+end
+
+function NotPlater:HandleCastEvent(frame, event, unit)
+	for frame in pairs(frames) do
+		if frame:IsShown() then
+			if unit == "target" and NotPlater:IsTarget(frame) then
+				frame.healthBar.lastUnitMatch = "target"
+				NotPlater:CastBarOnCast(frame, event, unit)
+			end
+		end
+	end
 end
 
 function NotPlater:IsTarget(frame)
@@ -220,14 +241,11 @@ function NotPlater:PrepareFrame(frame)
 			self.guildMember = nil
 			self.partyRaidMember = nil
 			self.lastCheckedName = nil
+			self.classCheckThrottle = 0
 			
 			-- Get the current nameplate name
 			local nameText = select(7, self:GetRegions())
 			local playerName = nameText and nameText:GetText()
-			
-			if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-				DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnShow for: " .. (playerName or "unknown"))
-			end
 			
 			-- Immediate cache check on nameplate show
 			if playerName and NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
@@ -247,27 +265,12 @@ function NotPlater:PrepareFrame(frame)
 				-- 3. Recently seen cache
 				if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
 					foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
-					if foundClass and NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-						DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnShow found " .. playerName .. " in Recently Seen Cache")
-					end
 				end
 				
 				-- Apply colors immediately if found
 				if self.unitClass and self.healthBar then
-					-- Force the color application
 					self.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
-					
-					-- Store the name we checked so we can verify in OnUpdate
 					self.lastCheckedName = playerName
-					
-					if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-						DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff33ff99NotPlater|r: OnShow applied color for %s: r=%.2f g=%.2f b=%.2f", 
-							playerName, self.unitClass.r, self.unitClass.g, self.unitClass.b))
-					end
-				else
-					if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-						DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnShow no class found for: " .. playerName)
-					end
 				end
 			end
 			
@@ -288,17 +291,10 @@ function NotPlater:PrepareFrame(frame)
 			self.guildMember = nil  
 			self.partyRaidMember = nil
 			self.wasTarget = nil
-			
-			if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-				local nameText = select(7, self:GetRegions())
-				if nameText then
-					local playerName = nameText:GetText()
-					DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnHide cleared data for: " .. (playerName or "unknown"))
-				end
-			end
+			self.classCheckThrottle = nil
 		end)
 
-		-- Simple OnUpdate that continuously hides default cast elements
+		-- Optimized OnUpdate that continuously hides default cast elements
 		self:HookScript(frame, 'OnUpdate', function(self, elapsed)
 			-- Always hide default cast elements when NotPlater castbar is enabled
 			if NotPlater.db.profile.castBar.statusBar.general.enable then
@@ -331,57 +327,43 @@ function NotPlater:PrepareFrame(frame)
 				end
 				
 				-- Only do class checking if we need class colors and don't already have a class
-				-- IMPORTANT: Check if we already have unitClass to avoid overriding cache colors
 				if NotPlater.db.profile.threat.nameplateColors.general.useClassColors and not self.unitClass then
 					local nameText = select(7, self:GetRegions())
 					local playerName = nameText and nameText:GetText()
 					
-					-- Debug logging
-					if playerName and NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-						DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: OnUpdate checking for: " .. playerName .. " (unitClass is nil)")
-					end
-					
-					-- Try party/raid cache first (most immediate)
-					local foundClass = false
-					if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
-						foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(self)
-					end
-					-- If not found in party/raid, try guild cache
-					if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
-						foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
-					end
-					-- Try recently seen cache
-					if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
-						foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
-					end
-					-- Finally fallback to regular class check
-					if not foundClass then
-						NotPlater:ClassCheck(self)
-					end
-					
-					-- Apply class colors if we found a class
-					if self.unitClass and frame.healthBar then
-						frame.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
+					if playerName then
+						-- Try party/raid cache first (most immediate)
+						local foundClass = false
+						if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
+							foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(self)
+						end
+						-- If not found in party/raid, try guild cache
+						if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
+							foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
+						end
+						-- Try recently seen cache
+						if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
+							foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
+						end
+						-- Finally fallback to regular class check
+						if not foundClass then
+							NotPlater:ClassCheck(self)
+						end
 						
-						if playerName and NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-							DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff33ff99NotPlater|r: OnUpdate applied color for %s: r=%.2f g=%.2f b=%.2f", 
-								playerName, self.unitClass.r, self.unitClass.g, self.unitClass.b))
+						-- Apply class colors if we found a class
+						if self.unitClass and frame.healthBar then
+							frame.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
 						end
 					end
 				elseif self.unitClass and frame.healthBar then
 					-- We already have class colors, just make sure they're applied
-					-- This handles the case where the health bar might have been reset
 					local currentR, currentG, currentB = frame.healthBar:GetStatusBarColor()
-					if math.abs(currentR - self.unitClass.r) > 0.01 or 
-					   math.abs(currentG - self.unitClass.g) > 0.01 or 
-					   math.abs(currentB - self.unitClass.b) > 0.01 then
-						-- Color doesn't match, reapply
-						frame.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
-						
-						if NotPlater.db.profile.recentlySeenCache and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-							local nameText = select(7, self:GetRegions())
-							local playerName = nameText and nameText:GetText()
-							DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff33ff99NotPlater|r: OnUpdate reapplied color for %s", playerName or "unknown"))
+					if currentR and currentG and currentB and self.unitClass.r and self.unitClass.g and self.unitClass.b then
+						if math.abs(currentR - self.unitClass.r) > 0.01 or 
+						   math.abs(currentG - self.unitClass.g) > 0.01 or 
+						   math.abs(currentB - self.unitClass.b) > 0.01 then
+							-- Color doesn't match, reapply
+							frame.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
 						end
 					end
 				end

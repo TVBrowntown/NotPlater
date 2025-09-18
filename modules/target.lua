@@ -206,32 +206,40 @@ function NotPlater:TargetCheck(frame)
     else
         NotPlater:TargetOnNonTarget(frame)
         NotPlater:SetNormalFrameStrata(frame)
+        -- Hide cast bar for non-targets
+        if frame.castBar then
+            frame.castBar:Hide()
+            frame.castBar.casting = nil
+            frame.castBar.channeling = nil
+        end
     end
     
-    -- Only scale if scaling is actually enabled for each component
+    -- Cache scale config to avoid repeated table lookups
     local scaleConfig = NotPlater.db.profile.target.general.scale
-    if scaleConfig.healthBar then
+    
+    -- Only scale if scaling is actually enabled for each component
+    if scaleConfig.healthBar and frame.healthBar then
         NotPlater:ScaleHealthBar(frame.healthBar, isTarget)
     end
-    if scaleConfig.castBar then
+    if scaleConfig.castBar and frame.castBar then
         NotPlater:ScaleCastBar(frame.castBar, isTarget)
     end
-    if scaleConfig.nameText then
+    if scaleConfig.nameText and frame.nameText then
         NotPlater:ScaleNameText(frame.nameText, isTarget)
     end
-    if scaleConfig.targetTargetText then
+    if scaleConfig.targetTargetText and frame.targetTargetText then
         NotPlater:ScaleTargetTargetText(frame.targetTargetText, isTarget)
     end
-    if scaleConfig.levelText then
+    if scaleConfig.levelText and frame.levelText then
         NotPlater:ScaleLevelText(frame.levelText, isTarget)
     end
-    if scaleConfig.bossIcon then
+    if scaleConfig.bossIcon and frame.bossIcon then
         NotPlater:ScaleBossIcon(frame.bossIcon, isTarget)
     end
-    if scaleConfig.raidIcon then
+    if scaleConfig.raidIcon and frame.raidIcon then
         NotPlater:ScaleRaidIcon(frame.raidIcon, isTarget)
     end
-    if scaleConfig.threat then
+    if scaleConfig.threat and frame.healthBar then
         NotPlater:ScaleThreatComponents(frame.healthBar, isTarget)
     end
 end

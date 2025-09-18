@@ -286,21 +286,63 @@ local function SafeInitialize()
 
     -- Enhanced nameplate class checking that includes party/raid cache
     function PartyRaidCache:EnhancedClassCheck(frame)
-        if not frame then return end
+        if not frame then return false end
+        
+        -- Early exit checks
+        if not isInGroup then return false end
+        
+        -- Check if class colors are enabled
+        if not NotPlater.db or not NotPlater.db.profile or 
+           not NotPlater.db.profile.threat or
+           not NotPlater.db.profile.threat.nameplateColors or
+           not NotPlater.db.profile.threat.nameplateColors.general or
+           not NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
+            return false
+        end
+        
+        -- Check if party/raid cache is enabled
+        if not NotPlater.db.profile.partyRaidCache or
+           not NotPlater.db.profile.partyRaidCache.general or
+           not NotPlater.db.profile.partyRaidCache.general.enable then
+            return false
+        end
         
         -- Get nameplate info
         local nameText = select(7, frame:GetRegions())
-        if not nameText then return end
+        if not nameText then return false end
         
         local playerName = nameText:GetText()
-        if not playerName then return end
+        if not playerName then return false end
         
-        -- First try the party/raid cache
-        if self:ApplyGroupClassColors(frame, playerName) then
+        -- Check if we already processed this name
+        if frame.lastCheckedName == playerName and frame.unitClass then
             return true
         end
         
-        return false
+        local memberData = self:GetMemberData(playerName)
+        if not memberData or not memberData.classColor then
+            return false
+        end
+        
+        -- Safety check for healthBar
+        if not frame.healthBar then
+            return false
+        end
+        
+        -- Apply class color to health bar
+        frame.healthBar:SetStatusBarColor(
+            memberData.classColor.r, 
+            memberData.classColor.g, 
+            memberData.classColor.b, 
+            1
+        )
+        
+        -- Store the class info on the frame for other systems
+        frame.unitClass = memberData.classColor
+        frame.partyRaidMember = memberData
+        frame.lastCheckedName = playerName
+        
+        return true
     end
 
     -- Event handler function

@@ -151,7 +151,8 @@ local function SafeInitialize()
         local numMembers = GetNumGuildMembers()
         if not numMembers or numMembers == 0 then return end
         
-        -- Clear existing cache more efficiently
+        -- Use table recycling for better memory management
+        local oldRoster = guildRoster
         guildRoster = {}
         
         -- Populate cache with current roster
@@ -162,15 +163,27 @@ local function SafeInitialize()
             if name and class and classFileName then
                 local classColor = RAID_CLASS_COLORS[classFileName]
                 if classColor then
-                    guildRoster[name] = {
-                        class = class,
-                        classFileName = classFileName,
-                        level = level,
-                        rank = rank,
-                        rankIndex = rankIndex,
-                        online = online,
-                        classColor = classColor
-                    }
+                    -- Reuse old color table if it exists
+                    local oldEntry = oldRoster and oldRoster[name]
+                    if oldEntry and oldEntry.classFileName == classFileName then
+                        -- Reuse the color table
+                        guildRoster[name] = oldEntry
+                        oldEntry.level = level
+                        oldEntry.rank = rank
+                        oldEntry.rankIndex = rankIndex
+                        oldEntry.online = online
+                    else
+                        -- Create new entry
+                        guildRoster[name] = {
+                            class = class,
+                            classFileName = classFileName,
+                            level = level,
+                            rank = rank,
+                            rankIndex = rankIndex,
+                            online = online,
+                            classColor = classColor
+                        }
+                    end
                     membersAdded = membersAdded + 1
                 end
             end
@@ -235,30 +248,54 @@ local function SafeInitialize()
 
     -- Enhanced nameplate class checking that includes guild cache
     function GuildCache:EnhancedClassCheck(frame)
-        if not frame then return end
+        if not frame then return false end
         
-        -- Get nameplate info
+        -- Check if class colors are enabled
+        if not NotPlater.db or not NotPlater.db.profile or 
+           not NotPlater.db.profile.threat or
+           not NotPlater.db.profile.threat.nameplateColors or
+           not NotPlater.db.profile.threat.nameplateColors.general or
+           not NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
+            return false
+        end
+        
+        -- Get nameplate info with early exit
         local nameText = select(7, frame:GetRegions())
-        if not nameText then return end
+        if not nameText then return false end
         
         local playerName = nameText:GetText()
-        if not playerName then return end
+        if not playerName then return false end
         
-        -- Guild cache only applies to players anyway, so this is always valid
-        -- But check the setting for consistency
-        if NotPlater.db.profile.threat.nameplateColors.general.playersOnly then
-            -- Guild members are always players, so this is fine
-            if self:ApplyGuildClassColors(frame, playerName) then
-                return
-            end
-        elseif self:ApplyGuildClassColors(frame, playerName) then
-            return
+        -- Check if we already processed this name
+        if frame.lastCheckedName == playerName and frame.unitClass then
+            return true
         end
         
-        -- Fall back to original class check method
-        if NotPlater.ClassCheck then
-            NotPlater:ClassCheck(frame)
+        -- Get member data from cache
+        local memberData = self:GetMemberData(playerName)
+        if not memberData or not memberData.classColor then
+            return false
         end
+        
+        -- Safety check for healthBar
+        if not frame.healthBar then
+            return false
+        end
+        
+        -- Apply class color to health bar
+        frame.healthBar:SetStatusBarColor(
+            memberData.classColor.r, 
+            memberData.classColor.g, 
+            memberData.classColor.b, 
+            1
+        )
+        
+        -- Store the class info on the frame for other systems
+        frame.unitClass = memberData.classColor
+        frame.guildMember = memberData
+        frame.lastCheckedName = playerName
+        
+        return true
     end
 
     -- Event handler function
