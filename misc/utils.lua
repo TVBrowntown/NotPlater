@@ -86,14 +86,21 @@ function NotPlater:ConfigureGeneralisedStatusBar(bar, config)
 end
 
 function NotPlater:ConfigureGeneralisedText(text, anchorFrame, config)
+    if not text or not anchorFrame or not config then return end
+    
+    -- Clear and set position
     text:ClearAllPoints()
-	text:SetPoint(config.position.anchor, anchorFrame, config.position.anchor, config.position.xOffset, config.position.yOffset)
-	self:SetupFontString(text, config)
-	if config.general.enable then
-		text:Show()
-	else
-		text:Hide()
-	end
+    text:SetPoint(config.position.anchor, anchorFrame, config.position.anchor, config.position.xOffset, config.position.yOffset)
+    
+    -- Setup the font string with all properties
+    self:SetupFontString(text, config)
+    
+    -- Handle visibility
+    if config.general.enable then
+        text:Show()
+    else
+        text:Hide()
+    end
 end
 
 function NotPlater:ScaleGeneralisedStatusBar(bar, scalingFactor, config)
