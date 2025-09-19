@@ -191,10 +191,10 @@ end
 
 function NotPlater:TargetCheck(frame)
     local isTarget = NotPlater:IsTarget(frame)
-    
-    -- Cache the target state to avoid redundant processing
-    if frame.wasTarget == isTarget then
-        return
+
+    -- Store GUID for tracking
+    if isTarget and UnitExists("target") then
+        frame.unitGUID = UnitGUID("target")
     end
     
     frame.wasTarget = isTarget
@@ -216,8 +216,9 @@ function NotPlater:TargetCheck(frame)
     
     -- Cache scale config to avoid repeated table lookups
     local scaleConfig = NotPlater.db.profile.target.general.scale
+    local scalingFactor = isTarget and scaleConfig.scalingFactor or 1
     
-    -- Only scale if scaling is actually enabled for each component
+    -- Force scale update even if target state hasn't changed
     if scaleConfig.healthBar and frame.healthBar then
         NotPlater:ScaleHealthBar(frame.healthBar, isTarget)
     end
@@ -241,6 +242,9 @@ function NotPlater:TargetCheck(frame)
     end
     if scaleConfig.threat and frame.healthBar then
         NotPlater:ScaleThreatComponents(frame.healthBar, isTarget)
+    end
+    if scaleConfig.threatIcon and frame.threatIcon then
+        NotPlater:ScaleThreatIcon(frame, isTarget)
     end
 end
 

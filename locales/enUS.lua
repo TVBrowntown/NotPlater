@@ -213,4 +213,12 @@ NotPlaterLocals = {
 	["Clear all recently seen players from cache"] = "Clear all recently seen players from cache",
 	["Are you sure you want to clear the recently seen cache?"] = "Are you sure you want to clear the recently seen cache?",
 	["Enable debug messages for recently seen cache operations"] = "Enable debug messages for recently seen cache operations",
+
+	["Threat Icon"] = "Threat Icon",
+	["Enable threat icon display"] = "Enable threat icon display",
+	["Visibility"] = "Visibility",
+	["When to show the threat icon"] = "When to show the threat icon",
+	["Always"] = "Always",
+	["In Combat"] = "In Combat",
+	["In Group"] = "In Group",
 }

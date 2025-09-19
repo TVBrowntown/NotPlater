@@ -401,6 +401,16 @@ local function LoadOptions()
 			}
 		}
 	}
+	
+	options.args.threatIcon = {
+	    order = 0.5,
+	    type = "group",
+	    name = L["Threat Icon"],
+	    get = GetValue,
+	    set = SetValue,
+	    args = NotPlater.ConfigPrototypes.ThreatIcon
+	}
+	
 	options.args.healthBar = {
 		type = "group",
 		order = 1,
@@ -423,6 +433,7 @@ local function LoadOptions()
 			},
 		},
 	}
+	
 	options.args.castBar = {
 		type = "group",
 		order = 2,
@@ -457,6 +468,7 @@ local function LoadOptions()
 			},
 		},
 	}
+	
 	options.args.nameText = {
 		order = 3,
 		type = "group",
@@ -465,6 +477,7 @@ local function LoadOptions()
 		set = SetValue,
 		args = NotPlater.ConfigPrototypes.NameText
 	}
+	
 	options.args.levelText = {
 		order = 4,
 		type = "group",
@@ -473,6 +486,7 @@ local function LoadOptions()
 		set = SetValue,
 		args = NotPlater.ConfigPrototypes.LevelText
 	}
+	
 	options.args.raidIcon = {
 		order = 5,
 		type = "group",
@@ -481,6 +495,7 @@ local function LoadOptions()
 		set = SetValue,
 		args = NotPlater.ConfigPrototypes.Icon
 	}
+	
 	options.args.bossIcon = {
 		order = 6,
 		type = "group",
@@ -489,6 +504,7 @@ local function LoadOptions()
 		set = SetValue,
 		args = NotPlater.ConfigPrototypes.Icon
 	}
+	
 	options.args.target = {
 		order = 7,
 		type = "group",

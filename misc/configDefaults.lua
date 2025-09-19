@@ -52,13 +52,13 @@ function NotPlater:LoadDefaultConfig()
             threat = {
                 general = {
                     mode = "hdps",
-                    useColoredThreatNameplates = true,  -- Add this line
+                    useColoredThreatNameplates = true,
                     enableMouseoverUpdate = true
                 },
                 nameplateColors = {
                     general = {
                         enable = true,
-                        useClassColors = true, -- This will work with guild cache
+                        useClassColors = true,
                     },
                     colors = {
                         tank = {
@@ -210,6 +210,22 @@ function NotPlater:LoadDefaultConfig()
                     },
                 },
             },
+            threatIcon = {
+                general = {
+                    enable = true,
+                    opacity = 1,
+                    visibility = "combat",
+                },
+                size = {
+                    width = 36,
+                    height = 36,
+                },
+                position = {
+                    anchor = "RIGHT",
+                    xOffset = -32,
+                    yOffset = 0,
+                },
+            },
             healthBar = {
                 statusBar = {
                     general = {
@@ -256,7 +272,7 @@ function NotPlater:LoadDefaultConfig()
                 smoothing = {
                     general = {
                         enable = false,
-                        mode = "smooth", -- "smooth" or "cutaway"  
+                        mode = "smooth",
                         speed = 2.5,
                     },
                     cutaway = {
@@ -439,7 +455,8 @@ function NotPlater:LoadDefaultConfig()
                         levelText = false,
                         raidIcon = false,
                         bossIcon = false,
-                        targetTargetText = false
+                        targetTargetText = false,
+                        threatIcon = false,
                     },
                     border = {
                         indicator = {

@@ -284,7 +284,11 @@ end
 function NotPlater:SimulatorReload()
     self:SetSimulatorSize()
     self:PrepareFrame(self.simulatorFrame.defaultFrame)
-    --self.simulatorFrame.defaultFrame.castBar.casting = false
+    -- ADD THIS LINE to ensure threat icon is configured:
+    if self.simulatorFrame.defaultFrame.threatIcon then
+        self:ConfigureThreatIcon(self.simulatorFrame.defaultFrame)
+        self:UpdateThreatIcon(self.simulatorFrame.defaultFrame)
+    end
 end
 
 function NotPlater:SimulatorFrameOnShow()
@@ -402,6 +406,10 @@ function NotPlater:ConstructSimulatorFrame()
 	simulatorFrame.defaultFrame.dangerSkull = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")
 	simulatorFrame.defaultFrame.defaultBossIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")
 	simulatorFrame.defaultFrame.defaultRaidIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")
+
+    self:ConstructThreatIcon(simulatorFrame.defaultFrame)
+    self:ConstructCastBar(simulatorFrame.defaultFrame)
+    self:ConstructTarget(simulatorFrame.defaultFrame)
 
     -- Prepare
     self:PrepareFrame(simulatorFrame.defaultFrame)

@@ -227,6 +227,7 @@ function NotPlater:PrepareFrame(frame)
 		-- Construct everything
 		self:ConstructHealthBar(frame, health)
 		self:ConstructThreatComponents(frame.healthBar)
+		self:ConstructThreatIcon(frame)  -- ADD THIS LINE
 		self:ConstructCastBar(frame)
 		self:ConstructTarget(frame)
 
@@ -326,6 +327,44 @@ function NotPlater:PrepareFrame(frame)
 					self.targetChanged = nil
 				end
 				
+				-- Update threat icon if enabled
+				if NotPlater.db.profile.threatIcon and NotPlater.db.profile.threatIcon.general.enable then
+					-- Store unit for threat icon
+					local nameText, levelText = select(7, self:GetRegions())
+					if nameText and levelText then
+						local name = nameText:GetText()
+						local level = levelText:GetText()
+						
+						-- Try to match unit
+						if name and level then
+						    if UnitExists("target") and name == UnitName("target") and level == tostring(UnitLevel("target")) then
+						        self.unit = "target"
+						        self.unitGUID = UnitGUID("target")  -- ADD THIS
+						    elseif UnitExists("mouseover") and name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) then
+						        self.unit = "mouseover"
+						        self.unitGUID = UnitGUID("mouseover")  -- ADD THIS
+						    else
+						        -- Check party/raid targets
+						        local group = NotPlater.raid or NotPlater.party
+						        if group then
+						            for gMember, unitID in pairs(group) do
+						                local targetString = unitID .. "-target"
+						                if name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) then
+						                    self.unit = targetString
+						                    self.unitGUID = UnitGUID(targetString)  -- ADD THIS
+						                    break
+						                end
+						            end
+						        end
+						    end
+						end
+					end
+					
+					if self.unit then
+						NotPlater:UpdateThreatIcon(self)
+					end
+				end
+				
 				-- Only do class checking if we need class colors and don't already have a class
 				if NotPlater.db.profile.threat.nameplateColors.general.useClassColors and not self.unitClass then
 					local nameText = select(7, self:GetRegions())
@@ -397,6 +436,7 @@ function NotPlater:PrepareFrame(frame)
 	
 	-- Configure everything
 	self:ConfigureThreatComponents(frame)
+	self:ConfigureThreatIcon(frame)  -- ADD THIS LINE
 	self:ConfigureHealthBar(frame, health)
 	self:ConfigureCastBar(frame)
 	self:ConfigureStacking(frame)
@@ -407,7 +447,6 @@ function NotPlater:PrepareFrame(frame)
 	self:ConfigureTarget(frame)
 	self:TargetCheck(frame)
 end
-
 function NotPlater:HookFrames(...)
 	local numArgs = select("#", ...)
 	for i = 1, numArgs do

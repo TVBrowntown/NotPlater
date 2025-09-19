@@ -481,6 +481,44 @@ function ConfigPrototypes:LoadConfigPrototypes()
         colors = ConfigPrototypes:GetGeneralisedThreatColorsConfig(L["Aggro on You"], L["Tank no Aggro"], L["DPS Close"], L["Aggro on You"], L["High Threat"], L["No Aggro"])
     }
     ConfigPrototypes.ThreatNumberText = ConfigPrototypes:GetGeneralisedThreatFontConfig(L["Number 1 in Group"], L["Above 80% in Group"], L["Below 80% in Group"], L["Number 1 in Group"], L["Above 80% in Group"], L["Below 80% in Group"])
+    ConfigPrototypes.ThreatIcon = {
+        general = {
+            order = 0,
+            type = "group",
+            inline = true,
+            name = L["General"],
+            args = {
+                enable = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Enable"],
+                    desc = L["Enable threat icon display"],
+                    width = "full",
+                },
+                visibility = {
+                    order = 1,
+                    type = "select",
+                    name = L["Visibility"],
+                    desc = L["When to show the threat icon"],
+                    values = {
+                        ["always"] = L["Always"],
+                        ["combat"] = L["In Combat"],
+                        ["group"] = L["In Group"],
+                    },
+                },
+                opacity = {
+                    order = 2,
+                    type = "range",
+                    name = L["Opacity"],
+                    min = 0,
+                    max = 1,
+                    step = 0.01,
+                },
+            },
+        },
+        size = ConfigPrototypes:GetGeneralisedSizeConfig(),
+        position = ConfigPrototypes:GetGeneralisedPositionConfig(),
+    }
     ConfigPrototypes.ThreatDifferentialText = ConfigPrototypes:GetGeneralisedThreatFontConfig(L["Aggro on You"], L["Tank no Aggro"], L["DPS Close"], L["Aggro on You"], L["High Threat"], L["No Aggro"])
     ConfigPrototypes.ThreatPercentStatusBar = ConfigPrototypes:GetGeneralisedStatusBarConfig()
     ConfigPrototypes.ThreatPercentStatusBar.position = ConfigPrototypes:GetGeneralisedPositionConfig()
