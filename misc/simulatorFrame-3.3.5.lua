@@ -360,18 +360,20 @@ function NotPlater:ConstructSimulatorFrame()
     self:SetSimulatorSize()
     simulatorFrame:SetPoint("CENTER", 4, -1)
     simulatorFrame:SetBackdrop({bgFile="Interface\\BUTTONS\\WHITE8X8", edgeFile="Interface\\BUTTONS\\WHITE8X8", tileSize=16, tile=true, edgeSize=2, insets = {left=4,right=4,top=4,bottom=4}})
-	simulatorFrame:SetBackdropColor(0, 0, 0, 0)
+    simulatorFrame:SetBackdropColor(0, 0, 0, 0)
     simulatorFrame:SetBackdropBorderColor(1, 1, 1, 0.3)
     simulatorFrame.outlineText = simulatorFrame:CreateFontString(nil, "ARTWORK")
-	simulatorFrame.outlineText:SetFont(self.SML:Fetch(self.SML.MediaType.FONT, "Arial Narrow"), 16, "OUTLINE")
-	simulatorFrame.outlineText:SetPoint("BOTTOM", simulatorFrame, 0, 2)
-	simulatorFrame.outlineText:SetText(L["NotPlater Simulator Frame"])
-	simulatorFrame.outlineText:SetAlpha(0.3)
+    simulatorFrame.outlineText:SetFont(self.SML:Fetch(self.SML.MediaType.FONT, "Arial Narrow"), 16, "OUTLINE")
+    simulatorFrame.outlineText:SetPoint("BOTTOM", simulatorFrame, 0, 2)
+    simulatorFrame.outlineText:SetText(L["NotPlater Simulator Frame"])
+    simulatorFrame.outlineText:SetAlpha(0.3)
     simulatorFrame.dragMeTexture = simulatorFrame:CreateTexture(nil, "BORDER")
     simulatorFrame.dragMeTexture:SetTexture("Interface\\AddOns\\".. addonName .."\\images\\drag")
     self:SetSize(simulatorFrame.dragMeTexture, 16, 16)
     simulatorFrame.dragMeTexture:SetPoint("TOPLEFT", simulatorFrame, 7, -7)
     simulatorFrame.dragMeTexture:SetAlpha(0.3)
+    
+    -- Create the main nameplate frame
     simulatorFrame.defaultFrame = CreateFrame("Button", "NotPlaterSimulatorDefaultFrame", simulatorFrame)
     simulatorFrame.defaultFrame:EnableMouse(true)
     simulatorFrame.defaultFrame:RegisterForClicks("AnyDown")
@@ -388,30 +390,51 @@ function NotPlater:ConstructSimulatorFrame()
     self:SetSize(simulatorFrame.defaultFrame, 156.65, 39.16)
     simulatorFrame.defaultFrame:SetPoint("CENTER")
 
-    -- Frames
+    -- Create StatusBar frames FIRST
     simulatorFrame.defaultFrame.defaultHealthFrame = CreateFrame("StatusBar", "NotPlaterSimulatorHealthFrame", simulatorFrame.defaultFrame)
     simulatorFrame.defaultFrame.defaultHealthFrame:SetMinMaxValues(healthMin, healthMax)
     simulatorFrame.defaultFrame.defaultHealthFrame:SetStatusBarColor({1, 0.109, 0, 1})
-    --simulatorFrame.defaultFrame.defaultCastFrame = CreateFrame("StatusBar", "NotPlaterSimulatorCastFrame", simulatorFrame.defaultFrame)
 
-    -- Regions
-    simulatorFrame.defaultFrame.defaultThreatGlow = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
-    simulatorFrame.defaultFrame.defaultCastBorder = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
-    simulatorFrame.defaultFrame.defaultHealthBorder = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
-    simulatorFrame.defaultFrame.defaultCastNoStop = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
-    simulatorFrame.defaultFrame.defaultSpellIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
-    simulatorFrame.defaultFrame.defaultHighlightTexture = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
-    simulatorFrame.defaultFrame.defaultNameText = simulatorFrame.defaultFrame:CreateFontString(nil, "ARTWORK")
-    simulatorFrame.defaultFrame.defaultLevelText = simulatorFrame.defaultFrame:CreateFontString(nil, "ARTWORK")
-	simulatorFrame.defaultFrame.dangerSkull = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")
-	simulatorFrame.defaultFrame.defaultBossIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")
-	simulatorFrame.defaultFrame.defaultRaidIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")
+    -- Create ALL required textures that PrepareFrame expects (in the exact order PrepareFrame expects them from GetRegions())
+    -- This mimics the structure of a real nameplate frame
+    local threatGlow = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                    -- Region 1
+    local healthBorder = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                  -- Region 2  
+    local castBorder = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                    -- Region 3
+    local castNoStop = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                    -- Region 4
+    local spellIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                     -- Region 5
+    local highlightTexture = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")              -- Region 6
+    local nameText = simulatorFrame.defaultFrame:CreateFontString(nil, "ARTWORK")                   -- Region 7
+    local levelText = simulatorFrame.defaultFrame:CreateFontString(nil, "ARTWORK")                  -- Region 8
+    local dangerSkull = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")                    -- Region 9
+    local bossIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")                       -- Region 10
+    local raidIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")                       -- Region 11
 
+    -- Store the textures/regions for PrepareFrame to find via GetRegions()
+    -- Note: We can't directly control GetRegions() order, but we create them in the expected order
+    simulatorFrame.defaultFrame.defaultThreatGlow = threatGlow
+    simulatorFrame.defaultFrame.defaultHealthBorder = healthBorder  
+    simulatorFrame.defaultFrame.defaultCastBorder = castBorder
+    simulatorFrame.defaultFrame.defaultCastNoStop = castNoStop
+    simulatorFrame.defaultFrame.defaultSpellIcon = spellIcon
+    simulatorFrame.defaultFrame.defaultHighlightTexture = highlightTexture
+    simulatorFrame.defaultFrame.defaultNameText = nameText
+    simulatorFrame.defaultFrame.defaultLevelText = levelText
+    simulatorFrame.defaultFrame.dangerSkull = dangerSkull
+    simulatorFrame.defaultFrame.defaultBossIcon = bossIcon
+    simulatorFrame.defaultFrame.defaultRaidIcon = raidIcon
+
+    -- Set up child frames (health and cast bars)
+    local health = simulatorFrame.defaultFrame.defaultHealthFrame
+    local cast = CreateFrame("StatusBar", "NotPlaterSimulatorCastFrame", simulatorFrame.defaultFrame)
+
+    -- Now construct all components in proper order
+    self:ConstructHealthBar(simulatorFrame.defaultFrame, simulatorFrame.defaultFrame.defaultHealthFrame)
+    self:ConstructThreatComponents(simulatorFrame.defaultFrame.healthBar)
     self:ConstructThreatIcon(simulatorFrame.defaultFrame)
     self:ConstructCastBar(simulatorFrame.defaultFrame)
     self:ConstructTarget(simulatorFrame.defaultFrame)
 
-    -- Prepare
+    -- Prepare the frame (this will configure everything and expect all textures to exist)
     self:PrepareFrame(simulatorFrame.defaultFrame)
 
     ThreatSimulator:ConstructThreatScenario(6, 2, 2)

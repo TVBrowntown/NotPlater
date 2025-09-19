@@ -84,13 +84,46 @@ function NotPlater:ScaleHealthBar(healthFrame, isTarget)
 end
 
 function NotPlater:HealthBarOnShow(oldHealthBar)
-	oldHealthBar.healthBar:SetStatusBarColor(oldHealthBar:GetStatusBarColor())
-	oldHealthBar.healthBar.highlightTexture:SetAllPoints(oldHealthBar.healthBar)
+	-- Safety checks
+	if not oldHealthBar or not oldHealthBar.healthBar then
+		return
+	end
+	
+	-- Check if oldHealthBar has GetStatusBarColor method (i.e., is actually a StatusBar)
+	if oldHealthBar.GetStatusBarColor then
+		local r, g, b, a = oldHealthBar:GetStatusBarColor()
+		if r and g and b then
+			oldHealthBar.healthBar:SetStatusBarColor(r, g, b, a or 1)
+		else
+			-- Fallback to default health bar color if no color is available
+			local healthBarConfig = self.db.profile.healthBar
+			if healthBarConfig and healthBarConfig.statusBar and healthBarConfig.statusBar.general then
+				oldHealthBar.healthBar:SetStatusBarColor(self:GetColor(healthBarConfig.statusBar.general.color))
+			end
+		end
+	else
+		-- oldHealthBar is not a StatusBar frame, use default color
+		local healthBarConfig = self.db.profile.healthBar
+		if healthBarConfig and healthBarConfig.statusBar and healthBarConfig.statusBar.general then
+			oldHealthBar.healthBar:SetStatusBarColor(self:GetColor(healthBarConfig.statusBar.general.color))
+		end
+	end
+	
+	-- Set up highlight texture
+	if oldHealthBar.healthBar.highlightTexture then
+		oldHealthBar.healthBar.highlightTexture:SetAllPoints(oldHealthBar.healthBar)
+	end
 end
 
 function NotPlater:ConfigureHealthBar(frame, oldHealthBar)
+	-- Safety checks
+	if not frame or not frame.healthBar then
+		return
+	end
+	
 	local healthBarConfig = self.db.profile.healthBar
 	local healthFrame = frame.healthBar
+	
 	-- Configure statusbar
 	self:ConfigureGeneralisedStatusBar(healthFrame, healthBarConfig.statusBar)
 
@@ -110,25 +143,89 @@ function NotPlater:ConfigureHealthBar(frame, oldHealthBar)
 		frame.highlightTexture:SetTexture(0, 0, 0, 0)
 	end
 
-	self:HealthBarOnShow(oldHealthBar)
-	self:HealthOnValueChanged(oldHealthBar, oldHealthBar:GetValue())
+	-- Call HealthBarOnShow with safety checks
+	if oldHealthBar then
+		self:HealthBarOnShow(oldHealthBar)
+	end
+	
+	-- Call HealthOnValueChanged with safety checks
+	if oldHealthBar and oldHealthBar.GetValue and oldHealthBar.GetMinMaxValues then
+		-- Check if it's a proper StatusBar with the required methods
+		local success, value = pcall(function() return oldHealthBar:GetValue() end)
+		if success and value then
+			self:HealthOnValueChanged(oldHealthBar, value)
+		else
+			-- Set default values if we can't get them from oldHealthBar
+			local minVal, maxVal = 0, 100
+			if healthFrame.SetMinMaxValues and healthFrame.SetValue then
+				healthFrame:SetMinMaxValues(minVal, maxVal)
+				healthFrame:SetValue(maxVal) -- Default to full health
+				
+				-- Update health text with default values
+				if healthFrame.healthText then
+					local displayType = healthBarConfig.healthText.general.displayType
+					if displayType == "minmax" then
+						healthFrame.healthText:SetFormattedText("%d / %d", maxVal, maxVal)
+					elseif displayType == "both" then
+						healthFrame.healthText:SetFormattedText("%d (100%%)", maxVal)
+					elseif displayType == "percent" then
+						healthFrame.healthText:SetText("100%")
+					else
+						healthFrame.healthText:SetText("")
+					end
+				end
+			end
+		end
+	else
+		-- No valid oldHealthBar, set up with default values for simulator
+		if healthFrame.SetMinMaxValues and healthFrame.SetValue then
+			local minVal, maxVal = 0, 30000 -- Default simulator values
+			healthFrame:SetMinMaxValues(minVal, maxVal)
+			healthFrame:SetValue(maxVal)
+			
+			-- Update health text
+			if healthFrame.healthText then
+				local displayType = healthBarConfig.healthText.general.displayType
+				if displayType == "minmax" then
+					healthFrame.healthText:SetFormattedText("%.1fk / %.1fk", maxVal/1000, maxVal/1000)
+				elseif displayType == "both" then
+					healthFrame.healthText:SetFormattedText("%.1fk (100%%)", maxVal/1000)
+				elseif displayType == "percent" then
+					healthFrame.healthText:SetText("100%")
+				else
+					healthFrame.healthText:SetText("")
+				end
+			end
+		end
+	end
 end
 
 function NotPlater:ConstructHealthBar(frame, oldHealthBar)
-	-- Construct statusbar components
+	-- Don't reconstruct if already done
+	if frame.healthBar then
+		return
+	end
 
+	-- Construct statusbar components
 	local healthFrame = CreateFrame("StatusBar", "$parentHealthBar", frame)
 	self:ConstructGeneralisedStatusBar(healthFrame)
 
     -- Create health text
     healthFrame.healthText = healthFrame:CreateFontString(nil, "ARTWORK")
 
-	-- Create Mouseover highlight
+	-- Create or reference Mouseover highlight
+	if not frame.highlightTexture then
+		-- Create highlightTexture if it doesn't exist yet (for simulator)
+		frame.highlightTexture = frame:CreateTexture(nil, "ARTWORK")
+	end
 	frame.highlightTexture:SetBlendMode("ADD")
 	healthFrame.highlightTexture = frame.highlightTexture
 
-	-- Hook to set health text
-	self:HookScript(oldHealthBar, "OnValueChanged", "HealthOnValueChanged")
+	-- Hook to set health text (only if not already hooked)
+	if not oldHealthBar.npHealthHooked then
+		self:HookScript(oldHealthBar, "OnValueChanged", "HealthOnValueChanged")
+		oldHealthBar.npHealthHooked = true
+	end
 
 	oldHealthBar.healthBar = healthFrame
 	frame.healthBar = healthFrame

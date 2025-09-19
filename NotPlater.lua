@@ -202,6 +202,29 @@ function NotPlater:ImmediateCacheCheck(frame)
 end
 
 function NotPlater:PrepareFrame(frame)
+	-- Early return if already prepared (prevents multiple construction)
+	if frame.npHooked then
+		-- Just reconfigure without reconstructing
+		self:ConfigureThreatComponents(frame)
+		self:ConfigureThreatIcon(frame)
+		self:ConfigureHealthBar(frame, frame.healthBar and frame.healthBar:GetParent() or frame:GetChildren())
+		self:ConfigureCastBar(frame)
+		self:ConfigureStacking(frame)
+		-- Continue with icon and text configuration...
+		local threatGlow, healthBorder, castBorder, castNoStop, spellIcon, highlightTexture, nameText, levelText, dangerSkull, bossIcon, raidIcon = frame:GetRegions()
+		if bossIcon and raidIcon then
+			self:ConfigureGeneralisedIcon(bossIcon, frame.healthBar, self.db.profile.bossIcon)
+			self:ConfigureGeneralisedIcon(raidIcon, frame.healthBar, self.db.profile.raidIcon)
+		end
+		if levelText and nameText then
+			self:ConfigureLevelText(levelText, frame.healthBar)
+			self:ConfigureNameText(nameText, frame.healthBar)
+		end
+		self:ConfigureTarget(frame)
+		self:TargetCheck(frame)
+		return
+	end
+
 	local threatGlow, healthBorder, castBorder, castNoStop, spellIcon, highlightTexture, nameText, levelText, dangerSkull, bossIcon, raidIcon = frame:GetRegions()
 	local health, cast = frame:GetChildren()
 
@@ -213,11 +236,11 @@ function NotPlater:PrepareFrame(frame)
 		frame.highlightTexture = frame:CreateTexture(nil, "ARTWORK")
 
 		-- Hide default border
-		healthBorder:Hide()
-		threatGlow:SetTexCoord(0, 0, 0, 0)
-		castNoStop:SetTexCoord(0, 0, 0, 0)
-		dangerSkull:SetTexCoord(0, 0, 0, 0)
-		highlightTexture:SetTexCoord(0, 0, 0, 0)
+		if healthBorder then healthBorder:Hide() end
+		if threatGlow then threatGlow:SetTexCoord(0, 0, 0, 0) end
+		if castNoStop then castNoStop:SetTexCoord(0, 0, 0, 0) end
+		if dangerSkull then dangerSkull:SetTexCoord(0, 0, 0, 0) end
+		if highlightTexture then highlightTexture:SetTexCoord(0, 0, 0, 0) end
 
 		-- Store references to default cast elements for easy hiding
 		frame.defaultCast = cast
@@ -227,13 +250,14 @@ function NotPlater:PrepareFrame(frame)
 		-- Construct everything
 		self:ConstructHealthBar(frame, health)
 		self:ConstructThreatComponents(frame.healthBar)
-		self:ConstructThreatIcon(frame)  -- ADD THIS LINE
+		self:ConstructThreatIcon(frame)
 		self:ConstructCastBar(frame)
 		self:ConstructTarget(frame)
 
 		-- Hide old healthbar
-		health:Hide()
-    
+		if health then health:Hide() end
+		
+		-- Set up OnShow hook
 		self:HookScript(frame, "OnShow", function(self)
 			-- Force clear ALL cached data when showing
 			self.unitClass = nil
@@ -339,10 +363,10 @@ function NotPlater:PrepareFrame(frame)
 						if name and level then
 						    if UnitExists("target") and name == UnitName("target") and level == tostring(UnitLevel("target")) then
 						        self.unit = "target"
-						        self.unitGUID = UnitGUID("target")  -- ADD THIS
+						        self.unitGUID = UnitGUID("target")
 						    elseif UnitExists("mouseover") and name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) then
 						        self.unit = "mouseover"
-						        self.unitGUID = UnitGUID("mouseover")  -- ADD THIS
+						        self.unitGUID = UnitGUID("mouseover")
 						    else
 						        -- Check party/raid targets
 						        local group = NotPlater.raid or NotPlater.party
@@ -351,7 +375,7 @@ function NotPlater:PrepareFrame(frame)
 						                local targetString = unitID .. "-target"
 						                if name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) then
 						                    self.unit = targetString
-						                    self.unitGUID = UnitGUID(targetString)  -- ADD THIS
+						                    self.unitGUID = UnitGUID(targetString)
 						                    break
 						                end
 						            end
@@ -436,7 +460,7 @@ function NotPlater:PrepareFrame(frame)
 	
 	-- Configure everything
 	self:ConfigureThreatComponents(frame)
-	self:ConfigureThreatIcon(frame)  -- ADD THIS LINE
+	self:ConfigureThreatIcon(frame)
 	self:ConfigureHealthBar(frame, health)
 	self:ConfigureCastBar(frame)
 	self:ConfigureStacking(frame)
@@ -447,6 +471,7 @@ function NotPlater:PrepareFrame(frame)
 	self:ConfigureTarget(frame)
 	self:TargetCheck(frame)
 end
+
 function NotPlater:HookFrames(...)
 	local numArgs = select("#", ...)
 	for i = 1, numArgs do
