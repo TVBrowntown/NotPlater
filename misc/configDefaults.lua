@@ -12,12 +12,6 @@ function NotPlater:LoadDefaultConfig()
                     pruned = 0
                 },
                 version = 1
-            },
-            -- Add persistent color cache for nameplates
-            persistentColors = {
-                data = {},
-                lastUpdate = 0,
-                version = 1
             }
         },
         profile = {
@@ -55,6 +49,167 @@ function NotPlater:LoadDefaultConfig()
                     debugMode = false,
                 },
             },
+            threat = {
+                general = {
+                    mode = "hdps",
+                    useColoredThreatNameplates = true,
+                    enableMouseoverUpdate = true
+                },
+                nameplateColors = {
+                    general = {
+                        enable = true,
+                        useClassColors = true,
+                    },
+                    colors = {
+                        tank = {
+                            c1 = {0.5, 0.5, 1, 1},
+                            c2 = {1, 0.8, 0, 1},
+                            c3 = {1, 0.109, 0, 1}
+                        },
+                        hdps = {
+                            c1 = {1, 0.109, 0, 1},
+                            c2 = { 1, 0.8, 0, 1},
+                            c3 = {0.5, 0.5, 1, 1},
+                        }
+                    }
+                },
+                percent = {
+                    statusBar = {
+                        general = {
+                            enable = false,
+                            texture = "NotPlater Default",
+                            color = {1, 0, 0, 1},
+                            useThreatColors = true,
+                        },
+                        background = {
+                            enable = true,
+                            texture = "NotPlater Background",
+                            color = {0, 0, 0, 0.3},
+                        },
+                        border = {
+                            enable = true,
+                            color = {0, 0, 0, 1},
+                            thickness = 1,
+                        },
+                        size = {
+                            width = 28,
+                            height = 8,
+                        },
+                        position = {
+                            anchor = "TOPLEFT",
+                            xOffset = 31,
+                            yOffset = 4,
+                        },
+                        colors = {
+                            tank = {
+                                c1 = {0, 1, 0, 1},
+                                c2 = {1, 0.65, 0, 1},
+                                c3 = { 1, 0, 0, 1}
+                            },
+                            hdps = {
+                                c1 = {1, 0, 0, 1},
+                                c2 = {1, 0.65, 0, 1},
+                                c3 = {0, 1, 0, 1},
+                            }
+                        },
+                    },
+                    text = {
+                        general = {
+                            enable = false,
+                            name = "Arial Narrow",
+                            size = 7,
+                            border = "",
+                            color = {0, 0, 0, 1},
+                            useThreatColors = false,
+                        },
+                        position = {
+                            anchor = "CENTER",
+                            xOffset = 0,
+                            yOffset = 0,
+                        },
+                        shadow = {
+                            enable = false,
+                            color = { r = 0, g = 0, b = 0, a = 1 },
+                            xOffset = 0,
+                            yOffset = 0,
+                        },
+                        colors = {
+                            tank = {
+                                c1 = {0, 1, 0, 1},
+                                c2 = {1, 0.65, 0, 1},
+                                c3 = { 1, 0, 0, 1}
+                            },
+                            hdps = {
+                                c1 = {1, 0, 0, 1},
+                                c2 = {1, 0.65, 0, 1},
+                                c3 = {0, 1, 0, 1},
+                            }
+                        },
+                    },
+                },
+                differentialText = {
+                    general = {
+                        enable = false,
+                        name = "Arial Narrow",
+                        size = 11,
+                        border = "OUTLINE",
+                    },
+                    position = {
+                        anchor = "LEFT",
+                        xOffset = -25,
+                        yOffset = 0,
+                    },
+                    shadow = {
+                        enable = false,
+                        color = {0, 0, 0, 1},
+                        xOffset = 0,
+                        yOffset = 0,
+                    },
+                    colors = {
+                        tank = {
+                            c1 = {0, 1, 0, 1},
+                            c2 = {1, 0.65, 0, 1},
+                            c3 = {1, 0, 0, 1}
+                        },
+                        hdps = {
+                            c1 = {1, 0, 0, 1},
+                            c2 = {1, 0.65, 0, 1},
+                            c3 = {0, 1, 0, 1},
+                        }
+                    },
+                },
+                numberText = {
+                    general = {
+                        enable = false,
+                        name = "Arial Narrow",
+                        size = 20,
+                        border = "",
+                    },
+                    position = {
+                        anchor = "RIGHT",
+                        xOffset = 25,
+                        yOffset = 0,
+                    },
+                    shadow = {
+                        enable = false,
+                        color = { r = 0, g = 0, b = 0, a = 1 },
+                        xOffset = 0,
+                        yOffset = 0,
+                    },
+                    colors = {
+                        tank = {
+                            c1 = {0, 1, 0, 1},
+                            c2 = {1, 0.65, 0, 1},
+                            c3 = { 1, 0, 0, 1}
+                        },
+                        hdps = {
+                            c1 = {1, 0, 0, 1},
+                            c2 = {1, 0.65, 0, 1},
+                            c3 = {0, 1, 0, 1},
+                        }
+                    },
+                },
+            },
             threatIcon = {
                 general = {
                     enable = true,
@@ -71,16 +226,11 @@ function NotPlater:LoadDefaultConfig()
                     yOffset = 0,
                 },
             },
-            -- Simplified threat config (removed old UI components)
-            threat = {
-                general = {
-                    mode = "hdps",
-                },
-            },
             healthBar = {
                 statusBar = {
                     general = {
                         enable = true,
+                        color = {0.5, 0.5, 1, 1},
                         texture = "NotPlater HealthBar",
                     },
                     background = {
@@ -97,24 +247,6 @@ function NotPlater:LoadDefaultConfig()
                         color = {0, 0, 0, 0.8},
                         thickness = 1
                     },
-                },
-                coloring = {
-                    system = "reaction", -- "reaction" or "class"
-                    reactionColors = {
-                        hostile = {r = 1, g = 0, b = 0, a = 1},
-                        neutral = {r = 1, g = 1, b = 0, a = 1},
-                        friendly = {r = 0, g = 1, b = 0, a = 1},
-                    },
-                    classColors = {
-                        enable = true,
-                        playersOnly = true, -- Only apply class colors to players, not NPCs
-                    },
-                },
-                unitFilters = {
-                    showPlayerTotems = true,    -- Show other players' totems
-                    showOwnTotems = true,       -- Show your own totems
-                    showOwnPet = true,          -- Show your own pet/minion
-                    showOtherPlayerPets = true, -- Show other players' pets/minions
                 },
                 healthText = {
                     general = {
@@ -316,6 +448,7 @@ function NotPlater:LoadDefaultConfig()
                 general = {
                     scale = {
                         scalingFactor = 1.11,
+                        threat = false,
                         healthBar = true,
                         castBar = true,
                         nameText = true,
@@ -332,7 +465,7 @@ function NotPlater:LoadDefaultConfig()
                         },
                         highlight = {
                             enable = true,
-                            texture = NotPlater and NotPlater.defaultHighlightTexture or "",
+                            texture = NotPlater.defaultHighlightTexture,
                             color = {0, 0.521568, 1, 0.75},
                             thickness = 14
                         },

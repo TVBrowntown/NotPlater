@@ -38,6 +38,7 @@ NotPlaterLocals = {
 	["DPS Close"] = "DPS Close",
 	["DPS / Healer"] = "DPS / Healer",
 	["Enable"] = "Enable",
+	["Enable Mouseover Nameplate Threat Update"] = "Enable Mouseover Nameplate Threat Update",
 	["Frame Strata"] = "Frame Strata",
 	["Fullscreen"] = "Fullscreen",
 	["Fullscreen Dialog"] = "Fullscreen Dialog",
@@ -62,6 +63,7 @@ NotPlaterLocals = {
 	["Mode"] = "Mode",
 	["Mouseover Highlight"] = "Mouseover Highlight",
 	["Name"] = "Name",
+	["Nameplate Colors"] = "Nameplate Colors",
 	["Name Text"] = "Name Text",
 	["Non-Target Alpha"] = "Non-Target Alpha",
 	["Non-Target Shading"] = "Non-Target Shading",
@@ -108,6 +110,8 @@ NotPlaterLocals = {
 	["Threat Value (%)"] = "Threat Value (%)",
 	["Thick Outline"] = "Thick Outline",
 	["Thickness"] = "Thickness",
+	["Threat"] = "Threat",
+	["Threat Components"] = "Threat Components",
 	["Time Left"] = "Time Left",
 	["Toggle Simulator Frame"] = "Toggle Simulator Frame",
 	["Tooltip"] = "Tooltip",
@@ -116,41 +120,14 @@ NotPlaterLocals = {
 	["Top Right"] = "Top Right",
 	["Usage:"] = "Usage",
 	["Use /np minimap to show the minimap icon again"] = "Use /np minimap to show the minimap icon again",
+	["Use Class Colors when Possible"] = "Use Class Colors when Possible",
+	["Use Threat Colors"] = "Use Threat Colors",
 	["Width"] = "Width",
 	["X Offset"] = "X Offset",
 	["X Stacking"] = "X Stacking",
 	["Y Offset"] = "Y Offset",
 	["Y Stacking"] = "Y Stacking",
 	["You"] = "You",
-
-	-- New Coloring System localizations
-	["Coloring System"] = "Coloring System",
-	["Color System"] = "Color System",
-	["Choose how nameplate colors are determined"] = "Choose how nameplate colors are determined",
-	["Reaction Colors (Hostile/Friendly/Neutral)"] = "Reaction Colors (Hostile/Friendly/Neutral)",
-	["Class Colors"] = "Class Colors",
-	["Reaction Colors"] = "Reaction Colors",
-	["Hostile"] = "Hostile",
-	["Color for hostile units"] = "Color for hostile units",
-	["Neutral"] = "Neutral",
-	["Color for neutral units"] = "Color for neutral units",
-	["Friendly"] = "Friendly",
-	["Color for friendly units"] = "Color for friendly units",
-	["Use Class Colors"] = "Use Class Colors",
-	["Apply class colors to nameplates"] = "Apply class colors to nameplates",
-	["Only apply Class Colors to Players"] = "Only apply Class Colors to Players",
-	["When enabled, class colors will only be applied to player characters, not NPCs"] = "When enabled, class colors will only be applied to player characters, not NPCs",
-
-	-- Unit Filters localizations
-	["Unit Filters"] = "Unit Filters",
-	["Show Other Player Totems"] = "Show Other Player Totems",
-	["Display nameplates for other players' totems"] = "Display nameplates for other players' totems",
-	["Show Own Totems"] = "Show Own Totems",
-	["Display nameplates for your own totems"] = "Display nameplates for your own totems",
-	["Show Own Pet/Minion"] = "Show Own Pet/Minion",
-	["Display nameplates for your own pet or minion"] = "Display nameplates for your own pet or minion",
-	["Show Other Player Pets/Minions"] = "Show Other Player Pets/Minions",
-	["Display nameplates for other players' pets and minions"] = "Display nameplates for other players' pets and minions",
 
 	-- Guild Cache related localizations
 	["Guild Cache"] = "Guild Cache",
@@ -181,6 +158,10 @@ NotPlaterLocals = {
 	["Debug Mode"] = "Debug Mode",
 	["Enable debug messages for guild cache operations"] = "Enable debug messages for guild cache operations",
 
+	-- Add these lines to your NotPlaterLocals table in enUS.lua
+	["Only apply Class Colors to Players"] = "Only apply Class Colors to Players",
+	["When enabled, class colors will only be applied to player characters, not NPCs"] = "When enabled, class colors will only be applied to player characters, not NPCs",
+
 	-- Party/Raid Cache localizations
 	["Party/Raid Cache"] = "Party/Raid Cache",
 	["Enable Party/Raid Cache"] = "Enable Party/Raid Cache",
@@ -198,6 +179,12 @@ NotPlaterLocals = {
 	["Refresh Party/Raid Cache"] = "Refresh Party/Raid Cache",
 	["Manually refresh the party/raid roster cache"] = "Manually refresh the party/raid roster cache",
 	["Enable debug messages for party/raid cache operations"] = "Enable debug messages for party/raid cache operations",
+	["Only apply Class Colors to Players"] = "Only apply Class Colors to Players",
+	["When enabled, class colors will only be applied to player characters, not NPCs"] = "When enabled, class colors will only be applied to player characters, not NPCs",
+
+	["Use Colored Threat Nameplates"] = "Use Colored Threat Nameplates",
+	["Enable nameplate coloring based on threat. When disabled, nameplates will use default colors."] = "Enable nameplate coloring based on threat. When disabled, nameplates will use default colors.",
+	["Select your role for threat coloring"] = "Select your role for threat coloring",
 
 	-- Recently Seen Cache localizations
 	["Recently Seen Cache"] = "Recently Seen Cache",
@@ -227,7 +214,6 @@ NotPlaterLocals = {
 	["Are you sure you want to clear the recently seen cache?"] = "Are you sure you want to clear the recently seen cache?",
 	["Enable debug messages for recently seen cache operations"] = "Enable debug messages for recently seen cache operations",
 
-	-- Threat Icon localizations
 	["Threat Icon"] = "Threat Icon",
 	["Enable threat icon display"] = "Enable threat icon display",
 	["Visibility"] = "Visibility",
