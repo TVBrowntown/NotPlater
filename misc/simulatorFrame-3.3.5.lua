@@ -2,7 +2,6 @@ if not NotPlater then return end
 
 local addonName, addonShared = ...
 
---local configDialog = LibStub("AceConfigDialog-3.0")
 local L = NotPlaterLocals
 
 local tinsert = table.insert
@@ -16,7 +15,6 @@ local GameTooltip = GameTooltip
 local GetTime = GetTime
 local UnitGUID = UnitGUID
 
-local L = NotPlaterLocals
 local simulatorFrameConstructed = false
 local simulatorTextSet = false
 
@@ -44,7 +42,6 @@ local roleIconCoord = {
     [ThreatTypes.TANK] = {0, 0.28125, 0.328125, 0.625},
     [ThreatTypes.HEALER] = {0.3125, 0.59375, 0, 0.296875},
     [ThreatTypes.DPS] = {0.3125, 0.59375, 0.328125, 0.625},
-    --["NONE"] = {0.3125, 0.59375, 0.328125, 0.625}
 }
 local roleColors = {
     [ThreatTypes.TANK] = {1, 0, 0, 1},
@@ -206,18 +203,15 @@ function ThreatSimulator:ConstructThreatScenario(numDPS, numHealers, numTanks)
 end
 
 function NotPlater:SimulatorFrameOnUpdate(elapsed)
-    --if not configDialog.OpenFrames["NotPlater"] then
-        --NotPlater:HideSimulatorFrame()
-        --return
-    --end
     if not simulatorTextSet then
-        --self.defaultFrame.defaultBossIcon:SetTexture(BOSS_ICON_PATH)
         self.defaultFrame.defaultLevelText:SetText(L["70"])
         self.defaultFrame.defaultLevelText:SetTextColor(1, 1, 0, 1)
         self.defaultFrame.defaultNameText:SetText(L["Playername"])
         simulatorTextSet = true
         ThreatSimulator:Reset(self.defaultFrame.defaultHealthFrame)
     end
+    
+    -- Cast bar simulation
     if not self.defaultFrame.castBar.casting and NotPlater.db.profile.castBar.statusBar.general.enable then
         local startTime = GetTime()
         local endTime = startTime + castTime
@@ -231,11 +225,12 @@ function NotPlater:SimulatorFrameOnUpdate(elapsed)
             self.defaultFrame.castBar.icon.texture:SetTexture("Interface\\Icons\\Temp")
         end
         self.defaultFrame.castBar.casting = true
-		self.defaultFrame.castBar:Show()
+        self.defaultFrame.castBar:Show()
     elseif not NotPlater.db.profile.castBar.statusBar.general.enable then
         self.defaultFrame.castBar.casting = false
     end
 
+    -- Raid icon cycling
     if raidIconElapsed > raidIconInterval then
         self.defaultFrame.defaultRaidIcon:SetTexture(RAID_ICON_BASE_PATH .. tostring(currentRaidIconNum))
         self.defaultFrame.defaultBossIcon:SetTexture(RAID_ICON_BASE_PATH .. tostring(currentRaidIconNum))
@@ -245,15 +240,61 @@ function NotPlater:SimulatorFrameOnUpdate(elapsed)
         end
         raidIconElapsed = 0
     end
-
     raidIconElapsed = raidIconElapsed + elapsed
 
+    -- Threat simulation update
     if threatUpdateElapsed > 1 then
         ThreatSimulator:Step(self.defaultFrame.defaultHealthFrame)
+        
+        -- Update simulated threat data
         self.defaultFrame.healthBar.lastUnitMatch = "target"
-        NotPlater:OnNameplateMatch(self.defaultFrame.healthBar, ThreatSimulator.group, ThreatSimulator)
+        
+        -- Calculate simulated threat values
+        local simulatedData = {
+            playerThreat = 0,
+            maxThreat = 0,
+            secondHighest = 0,
+            playerRank = 1
+        }
+        
+        -- Find player's threat and calculate rankings
+        for i, unit in ipairs(ThreatSimulator.group) do
+            if unit.isPlayer then
+                simulatedData.playerThreat = unit.currentThreat
+            end
+            if unit.currentThreat > simulatedData.maxThreat then
+                simulatedData.secondHighest = simulatedData.maxThreat
+                simulatedData.maxThreat = unit.currentThreat
+            elseif unit.currentThreat > simulatedData.secondHighest and unit.currentThreat < simulatedData.maxThreat then
+                simulatedData.secondHighest = unit.currentThreat
+            end
+        end
+        
+        -- Calculate player rank
+        for i, unit in ipairs(ThreatSimulator.group) do
+            if not unit.isPlayer and unit.currentThreat > simulatedData.playerThreat then
+                simulatedData.playerRank = simulatedData.playerRank + 1
+            end
+        end
+        
+        -- Update threat components with simulated data
+        if NotPlater.UpdateThreatComponents then
+            NotPlater:UpdateThreatComponents(self.defaultFrame.healthBar, nil, simulatedData)
+        end
+        
+        -- Update colors using the new color manager
+        if NotPlater.ColorManager then
+            NotPlater.ColorManager:UpdateNameplateAppearance(self.defaultFrame)
+        end
+        
+        -- Update threat icon
+        if NotPlater.UpdateThreatIcon then
+            NotPlater:UpdateThreatIcon(self.defaultFrame)
+        end
+        
         threatUpdateElapsed = 0
     end
+    
     threatUpdateElapsed = threatUpdateElapsed + elapsed
 end
 
@@ -284,7 +325,6 @@ end
 function NotPlater:SimulatorReload()
     self:SetSimulatorSize()
     self:PrepareFrame(self.simulatorFrame.defaultFrame)
-    -- ADD THIS LINE to ensure threat icon is configured:
     if self.simulatorFrame.defaultFrame.threatIcon then
         self:ConfigureThreatIcon(self.simulatorFrame.defaultFrame)
         self:UpdateThreatIcon(self.simulatorFrame.defaultFrame)
@@ -393,26 +433,24 @@ function NotPlater:ConstructSimulatorFrame()
     -- Create StatusBar frames FIRST
     simulatorFrame.defaultFrame.defaultHealthFrame = CreateFrame("StatusBar", "NotPlaterSimulatorHealthFrame", simulatorFrame.defaultFrame)
     simulatorFrame.defaultFrame.defaultHealthFrame:SetMinMaxValues(healthMin, healthMax)
-    simulatorFrame.defaultFrame.defaultHealthFrame:SetStatusBarColor({1, 0.109, 0, 1})
+    simulatorFrame.defaultFrame.defaultHealthFrame:SetStatusBarColor(1, 0.109, 0, 1)
 
-    -- Create ALL required textures that PrepareFrame expects (in the exact order PrepareFrame expects them from GetRegions())
-    -- This mimics the structure of a real nameplate frame
-    local threatGlow = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                    -- Region 1
-    local healthBorder = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                  -- Region 2  
-    local castBorder = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                    -- Region 3
-    local castNoStop = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                    -- Region 4
-    local spellIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")                     -- Region 5
-    local highlightTexture = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")              -- Region 6
-    local nameText = simulatorFrame.defaultFrame:CreateFontString(nil, "ARTWORK")                   -- Region 7
-    local levelText = simulatorFrame.defaultFrame:CreateFontString(nil, "ARTWORK")                  -- Region 8
-    local dangerSkull = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")                    -- Region 9
-    local bossIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")                       -- Region 10
-    local raidIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")                       -- Region 11
+    -- Create ALL required textures
+    local threatGlow = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
+    local healthBorder = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
+    local castBorder = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
+    local castNoStop = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
+    local spellIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
+    local highlightTexture = simulatorFrame.defaultFrame:CreateTexture(nil, "ARTWORK")
+    local nameText = simulatorFrame.defaultFrame:CreateFontString(nil, "ARTWORK")
+    local levelText = simulatorFrame.defaultFrame:CreateFontString(nil, "ARTWORK")
+    local dangerSkull = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")
+    local bossIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")
+    local raidIcon = simulatorFrame.defaultFrame:CreateTexture(nil, "BORDER")
 
-    -- Store the textures/regions for PrepareFrame to find via GetRegions()
-    -- Note: We can't directly control GetRegions() order, but we create them in the expected order
+    -- Store references
     simulatorFrame.defaultFrame.defaultThreatGlow = threatGlow
-    simulatorFrame.defaultFrame.defaultHealthBorder = healthBorder  
+    simulatorFrame.defaultFrame.defaultHealthBorder = healthBorder
     simulatorFrame.defaultFrame.defaultCastBorder = castBorder
     simulatorFrame.defaultFrame.defaultCastNoStop = castNoStop
     simulatorFrame.defaultFrame.defaultSpellIcon = spellIcon
@@ -423,18 +461,18 @@ function NotPlater:ConstructSimulatorFrame()
     simulatorFrame.defaultFrame.defaultBossIcon = bossIcon
     simulatorFrame.defaultFrame.defaultRaidIcon = raidIcon
 
-    -- Set up child frames (health and cast bars)
+    -- Set up child frames
     local health = simulatorFrame.defaultFrame.defaultHealthFrame
     local cast = CreateFrame("StatusBar", "NotPlaterSimulatorCastFrame", simulatorFrame.defaultFrame)
 
-    -- Now construct all components in proper order
+    -- Construct all components
     self:ConstructHealthBar(simulatorFrame.defaultFrame, simulatorFrame.defaultFrame.defaultHealthFrame)
     self:ConstructThreatComponents(simulatorFrame.defaultFrame.healthBar)
     self:ConstructThreatIcon(simulatorFrame.defaultFrame)
     self:ConstructCastBar(simulatorFrame.defaultFrame)
     self:ConstructTarget(simulatorFrame.defaultFrame)
 
-    -- Prepare the frame (this will configure everything and expect all textures to exist)
+    -- Prepare the frame
     self:PrepareFrame(simulatorFrame.defaultFrame)
 
     ThreatSimulator:ConstructThreatScenario(6, 2, 2)

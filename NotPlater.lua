@@ -1,6 +1,10 @@
+-- NotPlater.lua
+-- Simplified core module with delegated responsibilities
+
 NotPlater = LibStub("AceAddon-3.0"):NewAddon("NotPlater", "AceEvent-3.0", "AceHook-3.0")
 NotPlater.revision = "v2.0.6"
 
+-- Local references for performance
 local UnitName = UnitName
 local UnitLevel = UnitLevel
 local UnitHealth = UnitHealth
@@ -8,664 +12,398 @@ local UnitGUID = UnitGUID
 local UnitExists = UnitExists
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
-local frames = {}
-local numChildren = -1
-
-local deadFramesCache = {}
-
--- DO NOT create frame here - wait for OnInitialize
-
+-- Initialize addon
 function NotPlater:OnInitialize()
-	-- Create the frame FIRST in OnInitialize
-	self.frame = CreateFrame("Frame")
-	
-	self:LoadDefaultConfig()
-
-	self.db = LibStub:GetLibrary("AceDB-3.0"):New("NotPlaterDB", self.defaults)
-
-	self:PARTY_MEMBERS_CHANGED()
-	self:RAID_ROSTER_UPDATE()
-	
-	self:RegisterEvent("PARTY_MEMBERS_CHANGED")
-	self:RegisterEvent("RAID_ROSTER_UPDATE")
-	self:RegisterEvent("PLAYER_TARGET_CHANGED")
-	
-	self:Reload()
-
-	self.SML = LibStub:GetLibrary("LibSharedMedia-3.0")
-	
-	-- Set up frame scripts AFTER frame is created
-	self:SetupFrameScripts()
-
-	 -- Initialize caches after AceDB is ready
+    -- Create the main frame first
+    self.frame = CreateFrame("Frame")
+    
+    -- Load configuration
+    self:LoadDefaultConfig()
+    self.db = LibStub:GetLibrary("AceDB-3.0"):New("NotPlaterDB", self.defaults)
+    
+    -- Initialize core systems
+    self:InitializeCoreModules()
+    
+    -- Set up party/raid tracking
+    self:PARTY_MEMBERS_CHANGED()
+    self:RAID_ROSTER_UPDATE()
+    
+    -- Register events
+    self:RegisterEvent("PARTY_MEMBERS_CHANGED")
+    self:RegisterEvent("RAID_ROSTER_UPDATE")
+    self:RegisterEvent("PLAYER_TARGET_CHANGED")
+    
+    -- Initialize frame manager
+    if self.FrameManager then
+        self.FrameManager:Initialize()
+    end
+    
+    -- Load shared media
+    self.SML = LibStub:GetLibrary("LibSharedMedia-3.0")
+    
+    -- Apply current settings
+    self:Reload()
+    
+    -- Initialize caches with delay
     C_Timer.After(0.1, function()
-        if self.GuildCache and self.GuildCache.Initialize then
-            self.GuildCache:Initialize()
-        end
-        if self.PartyRaidCache and self.PartyRaidCache.Initialize then
-            self.PartyRaidCache:Initialize()
-        end
-        if self.RecentlySeenCache and self.RecentlySeenCache.Initialize then
-            self.RecentlySeenCache:Initialize()
-        end
+        self:InitializeCaches()
     end)
 end
 
-function NotPlater:CleanupDeadFrames()
-    local deadFrames = {}
-    for frame in pairs(frames) do
-        if not frame:GetParent() or not frame:IsVisible() then
-            table.insert(deadFrames, frame)
-        end
+-- Initialize core modules
+function NotPlater:InitializeCoreModules()
+    -- Initialize Color Manager
+    if self.ColorManager then
+        self.ColorManager:Initialize()
     end
     
-    for _, frame in ipairs(deadFrames) do
-        frames[frame] = nil
-        if frame.healthBar then
-            frame.healthBar.lastValue = nil
-            frame.healthBar.lastMaxValue = nil
-            frame.healthBar.lastTextUpdate = nil
-        end
-        frame.unitClass = nil
-        frame.wasTarget = nil
+    -- Initialize Cache Manager
+    if self.CacheManager then
+        self.CacheManager:Initialize()
+    end
+    
+    -- Initialize Threat Provider
+    if self.ThreatProvider then
+        self.ThreatProvider:Initialize()
     end
 end
 
-function NotPlater:SetupFrameScripts()
-	-- Make sure frame exists
-	if not self.frame then
-		self.frame = CreateFrame("Frame")
-	end
-	
-	-- Set up the OnUpdate script with throttling
-	local updateThrottle = 0
-	local cleanupTimer = 0
-	local UPDATE_INTERVAL = 0.1 -- Keep original timing for stability
-	local CLEANUP_INTERVAL = 30 -- Keep original timing
-	
-	self.frame:SetScript("OnUpdate", function(self, elapsed)
-		updateThrottle = updateThrottle + elapsed
-		if updateThrottle >= UPDATE_INTERVAL then
-			if(WorldFrame:GetNumChildren() ~= numChildren) then
-				numChildren = WorldFrame:GetNumChildren()
-				NotPlater:HookFrames(WorldFrame:GetChildren())
-			end
-			updateThrottle = 0
-		end
-		
-		-- Add cleanup every 30 seconds
-		cleanupTimer = cleanupTimer + elapsed
-		if cleanupTimer >= CLEANUP_INTERVAL then
-			NotPlater:CleanupDeadFrames()
-			cleanupTimer = 0
-		end
-	end)
-
-	-- Set up the OnEvent script (keep original structure)
-	self.frame:SetScript("OnEvent", function(self, event, unit)
-		for frame in pairs(frames) do
-			if frame:IsShown() then
-				if unit == "target" then
-					-- Only show cast bar on the actual target nameplate
-					if NotPlater:IsTarget(frame) then
-						frame.healthBar.lastUnitMatch = "target"
-						NotPlater:CastBarOnCast(frame, event, unit)
-					else
-						-- Hide cast bar on non-target nameplates
-						if frame.castBar and frame.castBar:IsShown() then
-							frame.castBar:Hide()
-							frame.castBar.casting = nil
-							frame.castBar.channeling = nil
-						end
-					end
-				else
-					-- For non-target units, use the existing matching logic
-					local nameText, levelText = select(7, frame:GetRegions())
-					if nameText and levelText then
-						local name = nameText:GetText()
-						local level = levelText:GetText()
-						local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
-						local healthValue = frame.healthBar:GetValue()
-						if name and level and healthValue and healthMaxValue and 
-						   name == UnitName(unit) and 
-						   level == tostring(UnitLevel(unit)) and 
-						   healthValue == UnitHealth(unit) and 
-						   healthValue ~= healthMaxValue then
-							frame.healthBar.lastUnitMatch = unit
-							NotPlater:CastBarOnCast(frame, event, unit)
-						end
-					end
-				end
-			end
-		end
-	end)
+-- Initialize cache modules
+function NotPlater:InitializeCaches()
+    -- Guild Cache
+    if self.GuildCache and self.GuildCache.Initialize then
+        self.GuildCache:Initialize()
+    end
+    
+    -- Party/Raid Cache
+    if self.PartyRaidCache and self.PartyRaidCache.Initialize then
+        self.PartyRaidCache:Initialize()
+    end
+    
+    -- Recently Seen Cache
+    if self.RecentlySeenCache and self.RecentlySeenCache.Initialize then
+        self.RecentlySeenCache:Initialize()
+    end
 end
 
-function NotPlater:HandleCastEvent(frame, event, unit)
-	for frame in pairs(frames) do
-		if frame:IsShown() then
-			if unit == "target" and NotPlater:IsTarget(frame) then
-				frame.healthBar.lastUnitMatch = "target"
-				NotPlater:CastBarOnCast(frame, event, unit)
-			end
-		end
-	end
-end
-
+-- Check if frame is target
 function NotPlater:IsTarget(frame)
     local targetExists = UnitExists('target')
     if not targetExists then
         return false
     end
 
-	local nameText  = select(7,frame:GetRegions())
+    local nameText = select(7, frame:GetRegions())
     local targetName = UnitName('target')
 
-	return nameText and targetName == nameText:GetText() and frame:GetAlpha() >= 0.99
+    return nameText and targetName == nameText:GetText() and frame:GetAlpha() >= 0.99
 end
 
-function NotPlater:ImmediateCacheCheck(frame)
-	-- Quick cache check for immediate coloring
-	if not self.db.profile.threat.nameplateColors.general.useClassColors then
-		return false
-	end
-	
-	local nameText = select(7, frame:GetRegions())
-	if not nameText then return false end
-	
-	local playerName = nameText:GetText()
-	if not playerName then return false end
-	
-	-- Check caches in priority order
-	-- 1. Party/Raid cache
-	if self.PartyRaidCache and self.PartyRaidCache.EnhancedClassCheck then
-		if self.PartyRaidCache:EnhancedClassCheck(frame) then
-			return true
-		end
-	end
-	
-	-- 2. Guild cache  
-	if self.GuildCache and self.GuildCache.EnhancedClassCheck then
-		if self.GuildCache:EnhancedClassCheck(frame) then
-			return true
-		end
-	end
-	
-	-- 3. Recently seen cache
-	if self.RecentlySeenCache and self.RecentlySeenCache.EnhancedClassCheck then
-		if self.RecentlySeenCache:EnhancedClassCheck(frame) then
-			return true
-		end
-	end
-	
-	return false
-end
-
+-- Simplified PrepareFrame - delegates to specialized handlers
 function NotPlater:PrepareFrame(frame)
-	-- Early return if already prepared (prevents multiple construction)
-	if frame.npHooked then
-		-- Just reconfigure without reconstructing
-		self:ConfigureThreatComponents(frame)
-		self:ConfigureThreatIcon(frame)
-		self:ConfigureHealthBar(frame, frame.healthBar and frame.healthBar:GetParent() or frame:GetChildren())
-		self:ConfigureCastBar(frame)
-		self:ConfigureStacking(frame)
-		-- Continue with icon and text configuration...
-		local threatGlow, healthBorder, castBorder, castNoStop, spellIcon, highlightTexture, nameText, levelText, dangerSkull, bossIcon, raidIcon = frame:GetRegions()
-		if bossIcon and raidIcon then
-			self:ConfigureGeneralisedIcon(bossIcon, frame.healthBar, self.db.profile.bossIcon)
-			self:ConfigureGeneralisedIcon(raidIcon, frame.healthBar, self.db.profile.raidIcon)
-		end
-		if levelText and nameText then
-			self:ConfigureLevelText(levelText, frame.healthBar)
-			self:ConfigureNameText(nameText, frame.healthBar)
-		end
-		self:ConfigureTarget(frame)
-		self:TargetCheck(frame)
-		return
-	end
-
-	local threatGlow, healthBorder, castBorder, castNoStop, spellIcon, highlightTexture, nameText, levelText, dangerSkull, bossIcon, raidIcon = frame:GetRegions()
-	local health, cast = frame:GetChildren()
-
-	-- Hooks and creation (only once that way settings can be applied while frame is visible)
-	if not frame.npHooked then
-		frame.npHooked = true
-
-		frame.nameText, frame.levelText, frame.bossIcon, frame.raidIcon = nameText, levelText, bossIcon, raidIcon
-		frame.highlightTexture = frame:CreateTexture(nil, "ARTWORK")
-
-		-- Hide default border
-		if healthBorder then healthBorder:Hide() end
-		if threatGlow then threatGlow:SetTexCoord(0, 0, 0, 0) end
-		if castNoStop then castNoStop:SetTexCoord(0, 0, 0, 0) end
-		if dangerSkull then dangerSkull:SetTexCoord(0, 0, 0, 0) end
-		if highlightTexture then highlightTexture:SetTexCoord(0, 0, 0, 0) end
-
-		-- Store references to default cast elements for easy hiding
-		frame.defaultCast = cast
-		frame.defaultCastBorder = castBorder
-		frame.defaultSpellIcon = spellIcon
-
-		-- Construct everything
-		self:ConstructHealthBar(frame, health)
-		self:ConstructThreatComponents(frame.healthBar)
-		self:ConstructThreatIcon(frame)
-		self:ConstructCastBar(frame)
-		self:ConstructTarget(frame)
-
-		-- Hide old healthbar
-		if health then health:Hide() end
-		
-		-- Set up OnShow hook
-		self:HookScript(frame, "OnShow", function(self)
-			-- Force clear ALL cached data when showing
-			self.unitClass = nil
-			self.unitClassFromCache = nil
-			self.recentlySeen = nil
-			self.guildMember = nil
-			self.partyRaidMember = nil
-			self.lastCheckedName = nil
-			self.classCheckThrottle = 0
-			
-			-- Get the current nameplate name
-			local nameText = select(7, self:GetRegions())
-			local playerName = nameText and nameText:GetText()
-			
-			-- Immediate cache check on nameplate show
-			if playerName and NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
-				-- Check caches in priority order
-				local foundClass = false
-				
-				-- 1. Party/Raid cache (most immediate)
-				if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
-					foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(self)
-				end
-				
-				-- 2. Guild cache
-				if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
-					foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
-				end
-				
-				-- 3. Recently seen cache
-				if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
-					foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
-				end
-				
-				-- Apply colors immediately if found
-				if self.unitClass and self.healthBar then
-					self.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
-					self.lastCheckedName = playerName
-				end
-			end
-			
-			NotPlater:CastBarOnShow(self)
-			NotPlater:HealthBarOnShow(health)
-			NotPlater:StackingCheck(self)
-			NotPlater:ThreatComponentsOnShow(self)
-			NotPlater:TargetCheck(self)
-			self.targetChanged = true
-		end)
-		
-		-- Add OnHide to clear data
-		self:HookScript(frame, "OnHide", function(self)
-			-- Clear all class data when nameplate hides
-			self.unitClass = nil
-			self.unitClassFromCache = nil
-			self.recentlySeen = nil
-			self.guildMember = nil  
-			self.partyRaidMember = nil
-			self.wasTarget = nil
-			self.classCheckThrottle = nil
-		end)
-
-		-- Optimized OnUpdate that continuously hides default cast elements
-		self:HookScript(frame, 'OnUpdate', function(self, elapsed)
-			-- Always hide default cast elements when NotPlater castbar is enabled
-			if NotPlater.db.profile.castBar.statusBar.general.enable then
-				if self.defaultCast and self.defaultCast:IsShown() then
-					self.defaultCast:Hide()
-				end
-				if self.defaultCastBorder and self.defaultCastBorder:IsShown() then
-					self.defaultCastBorder:Hide()
-				end
-				if self.defaultSpellIcon and self.defaultSpellIcon:IsShown() then
-					self.defaultSpellIcon:Hide()
-				end
-			end
-			
-			if not self.targetCheckElapsed then self.targetCheckElapsed = 0 end
-			self.targetCheckElapsed = self.targetCheckElapsed + elapsed
-			
-			-- Only do expensive operations every 0.1 seconds
-			if self.targetCheckElapsed >= 0.1 then
-				local isTarget = NotPlater:IsTarget(self)
-				
-				-- Early exit if frame isn't shown
-				if not self:IsShown() then
-					return
-				end
-				
-				if self.targetChanged then
-					NotPlater:TargetCheck(self)
-					self.targetChanged = nil
-				end
-				
-				-- Update threat icon if enabled
-				if NotPlater.db.profile.threatIcon and NotPlater.db.profile.threatIcon.general.enable then
-					-- Store unit for threat icon
-					local nameText, levelText = select(7, self:GetRegions())
-					if nameText and levelText then
-						local name = nameText:GetText()
-						local level = levelText:GetText()
-						
-						-- Try to match unit
-						if name and level then
-						    if UnitExists("target") and name == UnitName("target") and level == tostring(UnitLevel("target")) then
-						        self.unit = "target"
-						        self.unitGUID = UnitGUID("target")
-						    elseif UnitExists("mouseover") and name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) then
-						        self.unit = "mouseover"
-						        self.unitGUID = UnitGUID("mouseover")
-						    else
-						        -- Check party/raid targets
-						        local group = NotPlater.raid or NotPlater.party
-						        if group then
-						            for gMember, unitID in pairs(group) do
-						                local targetString = unitID .. "-target"
-						                if name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) then
-						                    self.unit = targetString
-						                    self.unitGUID = UnitGUID(targetString)
-						                    break
-						                end
-						            end
-						        end
-						    end
-						end
-					end
-					
-					if self.unit then
-						NotPlater:UpdateThreatIcon(self)
-					end
-				end
-				
-				-- Only do class checking if we need class colors and don't already have a class
-				if NotPlater.db.profile.threat.nameplateColors.general.useClassColors and not self.unitClass then
-					local nameText = select(7, self:GetRegions())
-					local playerName = nameText and nameText:GetText()
-					
-					if playerName then
-						-- Try party/raid cache first (most immediate)
-						local foundClass = false
-						if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
-							foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(self)
-						end
-						-- If not found in party/raid, try guild cache
-						if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
-							foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
-						end
-						-- Try recently seen cache
-						if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
-							foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
-						end
-						-- Finally fallback to regular class check
-						if not foundClass then
-							NotPlater:ClassCheck(self)
-						end
-						
-						-- Apply class colors if we found a class
-						if self.unitClass and frame.healthBar then
-							frame.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
-						end
-					end
-				elseif self.unitClass and frame.healthBar then
-					-- We already have class colors, just make sure they're applied
-					local currentR, currentG, currentB = frame.healthBar:GetStatusBarColor()
-					if currentR and currentG and currentB and self.unitClass.r and self.unitClass.g and self.unitClass.b then
-						if math.abs(currentR - self.unitClass.r) > 0.01 or 
-						   math.abs(currentG - self.unitClass.g) > 0.01 or 
-						   math.abs(currentB - self.unitClass.b) > 0.01 then
-							-- Color doesn't match, reapply
-							frame.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
-						end
-					end
-				end
-				
-				-- Set target/target text
-				NotPlater:SetTargetTargetText(self)
-				
-				-- Handle alpha changes
-				if isTarget then
-					self:SetAlpha(1)
-				elseif NotPlater.db.profile.target.general.nonTargetAlpha.enable then
-					self:SetAlpha(NotPlater.db.profile.target.general.nonTargetAlpha.opacity)
-				end
-				
-				self.targetCheckElapsed = 0
-			end
-			
-			-- Handle level text visibility (this can be checked more frequently as it's cheap)
-			if NotPlater.db.profile.levelText.general.enable then
-				if not levelText:IsShown() then
-					levelText:Show()
-				end
-				levelText:SetAlpha(NotPlater.db.profile.levelText.general.opacity)
-			else
-				if levelText:IsShown() then
-					levelText:Hide()
-				end
-			end
-		end)
-	end
-	
-	-- Configure everything
-	self:ConfigureThreatComponents(frame)
-	self:ConfigureThreatIcon(frame)
-	self:ConfigureHealthBar(frame, health)
-	self:ConfigureCastBar(frame)
-	self:ConfigureStacking(frame)
-	self:ConfigureGeneralisedIcon(bossIcon, frame.healthBar, self.db.profile.bossIcon)
-	self:ConfigureGeneralisedIcon(raidIcon, frame.healthBar, self.db.profile.raidIcon)
-	self:ConfigureLevelText(levelText, frame.healthBar)
-	self:ConfigureNameText(nameText, frame.healthBar)
-	self:ConfigureTarget(frame)
-	self:TargetCheck(frame)
-end
-
-function NotPlater:HookFrames(...)
-	local numArgs = select("#", ...)
-	for i = 1, numArgs do
-		local frame = select(i, ...)
-		-- Skip frames we've already processed
-		if not frames[frame] and not frame:GetName() then
-			local region = frame:GetRegions()
-			if region and region:GetObjectType() == "Texture" and region:GetTexture() == "Interface\\TargetingFrame\\UI-TargetingFrame-Flash" then
-				frames[frame] = true
-				self:PrepareFrame(frame)
-			end
-		end
-	end
-end
-
-function NotPlater:Reload()
-	-- Make sure frame exists before using it
-	if not self.frame then
-		self.frame = CreateFrame("Frame")
-		self:SetupFrameScripts()
-	end
-	
-	if self.db.profile.castBar.statusBar.general.enable then
-		self:RegisterCastBarEvents(self.frame)
-	else
-		self:UnregisterCastBarEvents(self.frame)
-	end
-
-	if self.db.profile.threat.general.enableMouseoverUpdate then
-		self:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
-	else
-		self:UnregisterEvent("UPDATE_MOUSEOVER_UNIT")
-	end
-
-	for frame in pairs(frames) do
-		self:PrepareFrame(frame)
-	end
-end
-
-function NotPlater:PLAYER_TARGET_CHANGED()
-	for frame in pairs(frames) do
-		frame.targetChanged = true
-	end
-end
-
-function NotPlater:ApplyUnitClassColor(frame)
-    -- Helper to apply class colors to a frame
-    if frame.unitClass and frame.healthBar then
-        frame.healthBar:SetStatusBarColor(
-            frame.unitClass.r,
-            frame.unitClass.g,
-            frame.unitClass.b,
-            1
-        )
-        return true
+    -- Skip if already prepared
+    if frame.npHooked then
+        -- Just reconfigure components
+        self:ReconfigureFrame(frame)
+        return
     end
-    return false
+    
+    -- Mark as hooked
+    frame.npHooked = true
+    
+    -- Get frame regions
+    local threatGlow, healthBorder, castBorder, castNoStop, spellIcon, highlightTexture, 
+          nameText, levelText, dangerSkull, bossIcon, raidIcon = frame:GetRegions()
+    local health, cast = frame:GetChildren()
+    
+    -- Store references
+    frame.nameText = nameText
+    frame.levelText = levelText
+    frame.bossIcon = bossIcon
+    frame.raidIcon = raidIcon
+    
+    -- Hide default elements
+    if healthBorder then healthBorder:Hide() end
+    if threatGlow then threatGlow:SetTexCoord(0, 0, 0, 0) end
+    if castNoStop then castNoStop:SetTexCoord(0, 0, 0, 0) end
+    if dangerSkull then dangerSkull:SetTexCoord(0, 0, 0, 0) end
+    if highlightTexture then highlightTexture:SetTexCoord(0, 0, 0, 0) end
+    
+    -- Store default cast elements
+    frame.defaultCast = cast
+    frame.defaultCastBorder = castBorder
+    frame.defaultSpellIcon = spellIcon
+    
+    -- Create highlight texture
+    frame.highlightTexture = frame:CreateTexture(nil, "ARTWORK")
+    
+    -- Construct components
+    self:ConstructHealthBar(frame, health)
+    self:ConstructThreatComponents(frame.healthBar)
+    self:ConstructThreatIcon(frame)
+    self:ConstructCastBar(frame)
+    self:ConstructTarget(frame)
+    
+    -- Hide old health bar
+    if health then health:Hide() end
+    
+    -- Configure components
+    self:ConfigureFrame(frame)
 end
 
--- WITH THE NEW VERSION that adds caching:
+-- Reconfigure existing frame
+function NotPlater:ReconfigureFrame(frame)
+    local threatGlow, healthBorder, castBorder, castNoStop, spellIcon, highlightTexture, 
+          nameText, levelText, dangerSkull, bossIcon, raidIcon = frame:GetRegions()
+    
+    self:ConfigureThreatComponents(frame)
+    self:ConfigureThreatIcon(frame)
+    self:ConfigureHealthBar(frame, frame.healthBar and frame.healthBar:GetParent() or frame:GetChildren())
+    self:ConfigureCastBar(frame)
+    self:ConfigureStacking(frame)
+    
+    if bossIcon and raidIcon then
+        self:ConfigureGeneralisedIcon(bossIcon, frame.healthBar, self.db.profile.bossIcon)
+        self:ConfigureGeneralisedIcon(raidIcon, frame.healthBar, self.db.profile.raidIcon)
+    end
+    
+    if levelText and nameText then
+        self:ConfigureLevelText(levelText, frame.healthBar)
+        self:ConfigureNameText(nameText, frame.healthBar)
+    end
+    
+    self:ConfigureTarget(frame)
+    self:TargetCheck(frame)
+end
+
+-- Configure all frame components
+function NotPlater:ConfigureFrame(frame)
+    local threatGlow, healthBorder, castBorder, castNoStop, spellIcon, highlightTexture, 
+          nameText, levelText, dangerSkull, bossIcon, raidIcon = frame:GetRegions()
+    local health = frame:GetChildren()
+    
+    -- Configure all components
+    self:ConfigureThreatComponents(frame)
+    self:ConfigureThreatIcon(frame)
+    self:ConfigureHealthBar(frame, health)
+    self:ConfigureCastBar(frame)
+    self:ConfigureStacking(frame)
+    
+    if bossIcon and raidIcon then
+        self:ConfigureGeneralisedIcon(bossIcon, frame.healthBar, self.db.profile.bossIcon)
+        self:ConfigureGeneralisedIcon(raidIcon, frame.healthBar, self.db.profile.raidIcon)
+    end
+    
+    if levelText and nameText then
+        self:ConfigureLevelText(levelText, frame.healthBar)
+        self:ConfigureNameText(nameText, frame.healthBar)
+    end
+    
+    self:ConfigureTarget(frame)
+    self:TargetCheck(frame)
+end
+
+-- Reload settings
+function NotPlater:Reload()
+    -- Ensure frame exists
+    if not self.frame then
+        self.frame = CreateFrame("Frame")
+    end
+    
+    -- Update cast bar events
+    if self.db.profile.castBar.statusBar.general.enable then
+        self:RegisterCastBarEvents(self.frame)
+    else
+        self:UnregisterCastBarEvents(self.frame)
+    end
+    
+    -- Update mouseover events
+    if self.db.profile.threat.general.enableMouseoverUpdate then
+        self:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+    else
+        self:UnregisterEvent("UPDATE_MOUSEOVER_UNIT")
+    end
+    
+    -- Update all existing frames
+    if self.FrameManager then
+        self.FrameManager:UpdateAllFrames()
+    end
+end
+
+-- Target changed event
+function NotPlater:PLAYER_TARGET_CHANGED()
+    if self.FrameManager then
+        local frames = self.FrameManager:GetManagedFrames()
+        for frame in pairs(frames) do
+            frame.targetChanged = true
+        end
+    end
+end
+
+-- Update mouseover unit threat
+function NotPlater:UPDATE_MOUSEOVER_UNIT()
+    if not self.db.profile.threat.general.enableMouseoverUpdate then
+        return
+    end
+    
+    if UnitCanAttack("player", "mouseover") and not UnitIsDeadOrGhost("mouseover") and 
+       UnitAffectingCombat("mouseover") then
+        local mouseOverGuid = UnitGUID("mouseover")
+        local targetGuid = UnitGUID("target")
+        
+        if self.FrameManager then
+            local frames = self.FrameManager:GetManagedFrames()
+            for frame in pairs(frames) do
+                if frame:IsShown() then
+                    if mouseOverGuid == targetGuid and self:IsTarget(frame) then
+                        self:MouseoverThreatCheck(frame.healthBar, targetGuid)
+                        frame.highlightTexture:Show()
+                    else
+                        local nameText, levelText = select(7, frame:GetRegions())
+                        local name = nameText and nameText:GetText()
+                        local level = levelText and levelText:GetText()
+                        
+                        if name and level then
+                            local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
+                            local healthValue = frame.healthBar:GetValue()
+                            
+                            if name == UnitName("mouseover") and 
+                               level == tostring(UnitLevel("mouseover")) and 
+                               healthValue == UnitHealth("mouseover") and 
+                               healthValue ~= healthMaxValue then
+                                self:MouseoverThreatCheck(frame.healthBar, mouseOverGuid)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Simplified class check - mostly delegates to cache system
 function NotPlater:ClassCheck(frame)
     if frame.unitClass then return end
-    
-    -- Check if we should skip NPCs when playersOnly is enabled
-    local skipNPCs = self.db.profile.threat.nameplateColors.general.useClassColors and 
-                     self.db.profile.threat.nameplateColors.general.playersOnly
     
     local nameText, levelText = select(7, frame:GetRegions())
     if not nameText or not levelText then return end
     
     local name = nameText:GetText()
-    local level = levelText:GetText()
-    local healthValue = frame.healthBar:GetValue()
+    if not name then return end
     
-    if not name or not level then return end
-    
-    -- Variables to store found class info
-    local foundClass = nil
-    local foundClassFileName = nil
-    local foundLevel = nil
-    local foundUnit = nil
-    
-    -- Check target first as it's most common and fastest
-    if self:IsTarget(frame) then
-        if not (skipNPCs and not UnitIsPlayer("target")) then
-            local className, classFileName = UnitClass("target")
-            if classFileName and RAID_CLASS_COLORS[classFileName] then
-                frame.unitClass = RAID_CLASS_COLORS[classFileName]
-                foundClass = className
-                foundClassFileName = classFileName
-                foundLevel = UnitLevel("target")
-                foundUnit = "target"
-            end
+    -- Try cache manager first
+    if self.CacheManager then
+        if self.CacheManager:CheckAllCaches(frame, name) then
+            return
         end
     end
-
-    -- Check group members if in group
-    if not frame.unitClass then
-        local group = self.raid or self.party
-        if group then
-            for gMember, unitID in pairs(group) do
-                local targetString = unitID .. "-target"
-                if name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) and healthValue == UnitHealth(targetString) then
-                    if not (skipNPCs and not UnitIsPlayer(targetString)) then
-                        local className, classFileName = UnitClass(targetString)
-                        if classFileName and RAID_CLASS_COLORS[classFileName] then
-                            frame.unitClass = RAID_CLASS_COLORS[classFileName]
-                            foundClass = className
-                            foundClassFileName = classFileName
-                            foundLevel = UnitLevel(targetString)
-                            foundUnit = targetString
-                        end
-                    end
-                    break
-                end
+    
+    -- Fallback to direct detection
+    local level = levelText:GetText()
+    local healthValue = frame.healthBar and frame.healthBar:GetValue()
+    
+    if not level or not healthValue then return end
+    
+    -- Check target
+    if self:IsTarget(frame) then
+        local className, classFileName = UnitClass("target")
+        if classFileName and RAID_CLASS_COLORS[classFileName] then
+            frame.unitClass = RAID_CLASS_COLORS[classFileName]
+            
+            -- Add to recently seen cache
+            if self.RecentlySeenCache and self.RecentlySeenCache.AddPlayer then
+                self.RecentlySeenCache:AddPlayer(name, className, classFileName, UnitLevel("target"))
             end
+            
+            -- Apply color
+            if frame.healthBar then
+                frame.healthBar:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
+            end
+            return
         end
     end
     
     -- Check mouseover
-    if not frame.unitClass then
-        if name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) and healthValue == UnitHealth("mouseover") then
-            if not (skipNPCs and not UnitIsPlayer("mouseover")) then
-                local className, classFileName = UnitClass("mouseover")
-                if classFileName and RAID_CLASS_COLORS[classFileName] then
-                    frame.unitClass = RAID_CLASS_COLORS[classFileName]
-                    foundClass = className
-                    foundClassFileName = classFileName
-                    foundLevel = UnitLevel("mouseover")
-                    foundUnit = "mouseover"
-                end
+    if name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) and 
+       healthValue == UnitHealth("mouseover") then
+        local className, classFileName = UnitClass("mouseover")
+        if classFileName and RAID_CLASS_COLORS[classFileName] then
+            frame.unitClass = RAID_CLASS_COLORS[classFileName]
+            
+            -- Add to recently seen cache
+            if self.RecentlySeenCache and self.RecentlySeenCache.AddPlayer and UnitIsPlayer("mouseover") then
+                self.RecentlySeenCache:AddPlayer(name, className, classFileName, UnitLevel("mouseover"))
+            end
+            
+            -- Apply color
+            if frame.healthBar then
+                frame.healthBar:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
             end
         end
-    end
-    
-    -- Check focus last
-    if not frame.unitClass then
-        if name == UnitName("focus") and level == tostring(UnitLevel("focus")) and healthValue == UnitHealth("focus") then
-            if not (skipNPCs and not UnitIsPlayer("focus")) then
-                local className, classFileName = UnitClass("focus")
-                if classFileName and RAID_CLASS_COLORS[classFileName] then
-                    frame.unitClass = RAID_CLASS_COLORS[classFileName]
-                    foundClass = className
-                    foundClassFileName = classFileName
-                    foundLevel = UnitLevel("focus")
-                    foundUnit = "focus"
-                end
-            end
-        end
-    end
-    
-    -- If we found a player's class, add them to recently seen cache AND apply color
-    if foundClass and foundClassFileName and foundUnit then
-        -- Store the class on the frame
-        if not frame.unitClass then
-            frame.unitClass = RAID_CLASS_COLORS[foundClassFileName]
-        end
-        
-        -- Only add players (not NPCs) to the cache
-        if UnitIsPlayer(foundUnit) then
-            if self.RecentlySeenCache and self.RecentlySeenCache.AddPlayer then
-                self.RecentlySeenCache:AddPlayer(name, foundClass, foundClassFileName, foundLevel)
-            end
-        end
-        
-        -- Apply color immediately
-        self:ApplyUnitClassColor(frame)
     end
 end
 
-function NotPlater:UPDATE_MOUSEOVER_UNIT()
-	if UnitCanAttack("player", "mouseover") and not UnitIsDeadOrGhost("mouseover") and UnitAffectingCombat("mouseover") then
-		local mouseOverGuid = UnitGUID("mouseover")
-		local targetGuid = UnitGUID("target")
-		for frame in pairs(frames) do
-			if frame:IsShown() then
-				if mouseOverGuid == targetGuid then
-					if self:IsTarget(frame) then
-						self:MouseoverThreatCheck(frame.healthBar, targetGuid)
-						frame.highlightTexture:Show()
-					end
-				else
-					local nameText, levelText = select(7, frame:GetRegions())
-					local name = nameText:GetText()
-					local level = levelText:GetText()
-					local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
-					local healthValue = frame.healthBar:GetValue()
-					if name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) and healthValue == UnitHealth("mouseover") and healthValue ~= healthMaxValue then
-						self:MouseoverThreatCheck(frame.healthBar, mouseOverGuid)
-					end
-				end
-			end
-		end
-	end
+-- Mouseover threat check
+function NotPlater:MouseoverThreatCheck(healthFrame, guid)
+    if not healthFrame then return end
+    
+    local frame = healthFrame:GetParent()
+    if not frame then return end
+    
+    if not self.db.profile.threat.general.enableMouseoverUpdate then
+        return
+    end
+    
+    -- Update colors based on threat
+    if self.ColorManager then
+        self.ColorManager:UpdateNameplateAppearance(frame)
+    end
 end
 
--- NOTE: Frame scripts are now set up in SetupFrameScripts() function called from OnInitialize()
+-- Party/Raid roster updates
+function NotPlater:RAID_ROSTER_UPDATE()
+    self.raid = nil
+    if UnitInRaid("player") then
+        self.raid = {}
+        local raidNum = GetNumRaidMembers()
+        local i = 1
+        while raidNum > 0 and i <= MAX_RAID_MEMBERS do
+            if GetRaidRosterInfo(i) then
+                local guid = UnitGUID("raid" .. i)
+                self.raid[guid] = "raid" .. i
+                
+                local pet = UnitGUID("raidpet" .. i)
+                if pet then
+                    self.raid[pet] = "raidpet" .. i
+                end
+                raidNum = raidNum - 1
+            end
+            i = i + 1
+        end
+    end
+end
+
+function NotPlater:PARTY_MEMBERS_CHANGED()
+    self.party = nil
+    if UnitInParty("party1") then
+        local partyNum = GetNumPartyMembers()
+        local i = 1
+        self.party = {}
+        while partyNum > 0 and i < MAX_PARTY_MEMBERS do
+            if GetPartyMember(i) then
+                self.party[UnitGUID("party" .. i)] = "party" .. i
+                local pet = UnitGUID("partypet" .. i)
+                if pet then
+                    self.party[pet] = "partypet" .. i
+                end
+                partyNum = partyNum - 1
+            end
+            i = i + 1
+        end
+        self.party[UnitGUID("player")] = "player"
+        local pet = UnitGUID("pet")
+        if pet then
+            self.party[pet] = "pet"
+        end
+    end
+end

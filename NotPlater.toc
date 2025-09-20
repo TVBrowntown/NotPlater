@@ -1,7 +1,7 @@
 ## Interface: 30300
 ## Title: NotPlater
-## Notes: Feature rich nameplate addon (Design inspired by Plater)
-## Author: RichSteini
+## Notes: Feature rich nameplate addon (Refactored with modular architecture)
+## Author: RichSteini (Refactored by Bset & Claude)
 ## SavedVariables: NotPlaterDB
 ## OptionalDeps: LibStub, CallbackHandler, LibSharedMedia, Ace3
 
@@ -21,16 +21,29 @@ misc\config-3.3.5.lua
 misc\configDefaults.lua
 misc\utils.lua
 
-# Modules
-modules\castBar.lua
-modules\healthBar.lua
-modules\icon.lua
-modules\levelText.lua
-modules\nameText.lua
-modules\stacking.lua
-modules\target.lua
-modules\threat-3.3.5.lua
-modules\threat-icon-3.3.5.lua
-modules\guildCache.lua
-modules\partyRaidCache.lua
-modules\recentlySeenCache.lua
+# Core modules
+modules\core\colorManager.lua
+modules\core\cacheManager.lua
+modules\core\frameManager.lua
+
+# Provider modules
+modules\providers\colorProviders.lua
+modules\providers\threatProvider.lua
+
+# Display modules
+modules\display\healthBar.lua
+modules\display\castBar.lua
+modules\display\icon.lua
+modules\display\levelText.lua
+modules\display\nameText.lua
+modules\display\stacking.lua
+modules\display\target.lua
+
+# Threat modules
+modules\threat\threatComponents.lua
+modules\threat\threatIcon.lua
+
+# Cache modules
+modules\caches\guildCache.lua
+modules\caches\partyRaidCache.lua
+modules\caches\recentlySeenCache.lua

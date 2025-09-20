@@ -621,11 +621,26 @@ SlashCmdList["NOTPLATER"] = function(input)
         ToggleMinimap()
     elseif msg == "simulator" then
 		NotPlater:ToggleSimulatorFrame()
+    elseif msg == "export" then
+        NotPlater:ExportSettingsString()
+    elseif msg == "import" then
+        NotPlater:ShowImportFrame()
 	elseif msg == "help" then
         NotPlater:PrintHelp()
 	else
 		Config:ToggleConfig()
     end
+end
+
+-- Update the help function
+function NotPlater:PrintHelp()
+    self:Print(L["Usage:"])
+    self:Print(L["/np help - Show this message"])
+    self:Print(L["/np config - Toggle the config window"])
+    self:Print(L["/np simulator - Toggle the simulator frame"])
+    self:Print(L["/np minimap - Toggle the minimap icon"])
+    self:Print("/np export - Export settings as shareable string")
+    self:Print("/np import - Import settings from string")
 end
 
 --[[
