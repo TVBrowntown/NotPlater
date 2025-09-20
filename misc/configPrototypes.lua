@@ -9,7 +9,7 @@ local drawLayers = {["BACKGROUND"] = L["Background"], ["BORDER"] = L["Border"], 
 local ConfigPrototypes = {}
 NotPlater.ConfigPrototypes = ConfigPrototypes
 
--- Safe accessor functions with nil checking
+-- Safe accessor functions with nil checking and color fixing
 local function SafeGet(info)
     local profile = NotPlater.db and NotPlater.db.profile
     if not profile then return nil end
@@ -34,7 +34,13 @@ local function SafeSet(info, value)
         current = current[info[i]]
     end
     current[info[#info]] = value
-    NotPlater:Reload()
+    
+    -- Always use EnhancedReload for better updates
+    if NotPlater.EnhancedReload then
+        NotPlater:EnhancedReload()
+    else
+        NotPlater:Reload()
+    end
 end
 
 -- Return all registered SML textures
@@ -460,6 +466,10 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 end,
                 set = function(info, val)
                     SafeSet({"healthBar", "coloring", "system"}, val)
+                    -- Clear color caches when system changes
+                    if NotPlater.ColorManager then
+                        NotPlater.ColorManager:ClearPersistentCache()
+                    end
                 end,
             },
             reactionColorsHeader = {
@@ -554,7 +564,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     return system and system ~= "class"
                 end,
                 get = function(info)
-                    return SafeGet({"healthBar", "coloring", "classColors", "enable"}) or true
+                    return SafeGet({"healthBar", "coloring", "classColors", "enable"})
                 end,
                 set = function(info, val)
                     SafeSet({"healthBar", "coloring", "classColors", "enable"}, val)
@@ -571,10 +581,10 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     return system and system ~= "class"
                 end,
                 disabled = function() 
-                    return not (SafeGet({"healthBar", "coloring", "classColors", "enable"}) or true)
+                    return not SafeGet({"healthBar", "coloring", "classColors", "enable"})
                 end,
                 get = function(info)
-                    return SafeGet({"healthBar", "coloring", "classColors", "playersOnly"}) or true
+                    return SafeGet({"healthBar", "coloring", "classColors", "playersOnly"})
                 end,
                 set = function(info, val)
                     SafeSet({"healthBar", "coloring", "classColors", "playersOnly"}, val)
@@ -597,7 +607,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Display nameplates for other players' totems"],
                 width = "full",
                 get = function(info)
-                    return SafeGet({"healthBar", "unitFilters", "showPlayerTotems"}) or true
+                    return SafeGet({"healthBar", "unitFilters", "showPlayerTotems"})
                 end,
                 set = function(info, val)
                     SafeSet({"healthBar", "unitFilters", "showPlayerTotems"}, val)
@@ -610,7 +620,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Display nameplates for your own totems"],
                 width = "full",
                 get = function(info)
-                    return SafeGet({"healthBar", "unitFilters", "showOwnTotems"}) or true
+                    return SafeGet({"healthBar", "unitFilters", "showOwnTotems"})
                 end,
                 set = function(info, val)
                     SafeSet({"healthBar", "unitFilters", "showOwnTotems"}, val)
@@ -623,7 +633,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Display nameplates for your own pet or minion"],
                 width = "full",
                 get = function(info)
-                    return SafeGet({"healthBar", "unitFilters", "showOwnPet"}) or true
+                    return SafeGet({"healthBar", "unitFilters", "showOwnPet"})
                 end,
                 set = function(info, val)
                     SafeSet({"healthBar", "unitFilters", "showOwnPet"}, val)
@@ -636,7 +646,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Display nameplates for other players' pets and minions"],
                 width = "full",
                 get = function(info)
-                    return SafeGet({"healthBar", "unitFilters", "showOtherPlayerPets"}) or true
+                    return SafeGet({"healthBar", "unitFilters", "showOtherPlayerPets"})
                 end,
                 set = function(info, val)
                     SafeSet({"healthBar", "unitFilters", "showOtherPlayerPets"}, val)
@@ -645,6 +655,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
         }
     }
     
+    -- Rest of config prototypes remain the same...
     ConfigPrototypes.HealthText = ConfigPrototypes:GetGeneralisedColorFontConfig()
     ConfigPrototypes.HealthText.general.args.displayType = {
         order = 1,

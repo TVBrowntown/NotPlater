@@ -106,8 +106,16 @@ function FrameManager:SetupFrameUpdates(frame)
     -- OnUpdate handler for per-frame updates
     if not frame.npOnUpdateHooked then
         local frameUpdateElapsed = 0
+        local initialColorCheck = true
         NotPlater:HookScript(frame, "OnUpdate", function(self, elapsed)
             frameUpdateElapsed = frameUpdateElapsed + elapsed
+            
+            -- Quick initial color check
+            if initialColorCheck and frameUpdateElapsed >= 0.05 then
+                FrameManager:UpdateFrameColor(self)
+                initialColorCheck = false
+            end
+            
             if frameUpdateElapsed >= 0.1 then
                 FrameManager:OnNameplateUpdate(self)
                 frameUpdateElapsed = 0
@@ -119,12 +127,11 @@ end
 
 -- Handle nameplate show event
 function FrameManager:OnNameplateShow(frame)
-    -- Clear all cached data
-    if NotPlater.ColorManager then
-        NotPlater.ColorManager:ClearFrameColorCache(frame)
-    end
+    -- Don't clear color cache completely, just mark for update
+    frame.needsColorUpdate = true
+    frame.initialShow = true
     
-    -- Immediate color application
+    -- Immediate color application with better detection
     self:ApplyInitialColor(frame)
     
     -- Show cast bar if needed
@@ -143,46 +150,81 @@ function FrameManager:OnNameplateShow(frame)
     end
     
     frame.targetChanged = true
-    frame.needsColorUpdate = true
 end
 
--- Apply initial color when nameplate shows
+-- Apply initial color when nameplate shows - FIXED
 function FrameManager:ApplyInitialColor(frame)
     if not frame or not NotPlater.ColorManager then return end
     
     -- Get nameplate info
-    local nameText = select(7, frame:GetRegions())
+    local nameText, levelText = select(7, frame:GetRegions())
     local playerName = nameText and nameText:GetText()
+    local level = levelText and levelText:GetText()
     
-    if playerName then
-        -- Try to get color from any source
-        local color, colorType = NotPlater.ColorManager:GetNameplateColor(frame, playerName, nil)
-        if color then
-            NotPlater.ColorManager:ApplyNameplateColor(frame, color, colorType)
-        else
-            -- Apply default reaction color immediately
-            local reactionColors = NotPlater.db.profile.healthBar.coloring.reactionColors
-            local defaultColor = reactionColors.hostile -- Default to hostile red
+    if not playerName then return end
+    
+    -- Try to get color from any source
+    local color, colorType = NotPlater.ColorManager:GetNameplateColor(frame, playerName, nil)
+    
+    if color and colorType ~= "fallback" then
+        NotPlater.ColorManager:ApplyNameplateColor(frame, color, colorType)
+    else
+        -- Better fallback detection using level text color
+        local defaultColor = nil
+        
+        if levelText then
+            local r, g, b = levelText:GetTextColor()
             
-            if frame.healthBar then
-                frame.healthBar:SetStatusBarColor(defaultColor.r, defaultColor.g, defaultColor.b, defaultColor.a or 1)
+            -- Level text color indicates faction:
+            -- Red (r > 0.9, g < 0.2, b < 0.2) = Hostile
+            -- Yellow (r > 0.9, g > 0.9, b < 0.2) = Neutral  
+            -- Green/White = Friendly
+            
+            if r and g and b then
+                local reactionColors = NotPlater.db.profile.healthBar.coloring.reactionColors
+                
+                if r > 0.9 and g < 0.2 and b < 0.2 then
+                    -- Red level = hostile
+                    defaultColor = reactionColors.hostile
+                    frame.detectedReaction = "hostile"
+                elseif r > 0.9 and g > 0.9 and b < 0.2 then
+                    -- Yellow level = neutral
+                    defaultColor = reactionColors.neutral
+                    frame.detectedReaction = "neutral"
+                else
+                    -- Green/White level = friendly
+                    defaultColor = reactionColors.friendly
+                    frame.detectedReaction = "friendly"
+                end
             end
         end
+        
+        -- If we still don't have a color, use neutral as safer default
+        if not defaultColor then
+            local reactionColors = NotPlater.db.profile.healthBar.coloring.reactionColors
+            defaultColor = reactionColors.neutral
+            frame.detectedReaction = "neutral"
+        end
+        
+        if frame.healthBar and defaultColor then
+            frame.healthBar:SetStatusBarColor(defaultColor.r, defaultColor.g, defaultColor.b, defaultColor.a or 1)
+            frame.currentColor = defaultColor
+            frame.currentColorType = "initial_" .. (frame.detectedReaction or "unknown")
+        end
     end
+    
+    -- Mark that we need a better color update soon
+    frame.needsColorUpdate = true
 end
 
 -- Handle nameplate hide event
 function FrameManager:OnNameplateHide(frame)
-    -- Clear all cached data
-    if NotPlater.ColorManager then
-        NotPlater.ColorManager:ClearFrameColorCache(frame)
-    end
-    
-    -- Clear unit data
+    -- Don't clear color cache, just unit data
     frame.unit = nil
     frame.unitGUID = nil
     frame.wasTarget = nil
     frame.needsColorUpdate = nil
+    frame.initialShow = nil
     
     -- Hide cast bar
     if frame.castBar then
@@ -225,10 +267,11 @@ function FrameManager:OnNameplateUpdate(frame)
         end
     end
     
-    -- Update colors if needed
-    if frame.needsColorUpdate then
+    -- Update colors if needed or on initial show
+    if frame.needsColorUpdate or frame.initialShow then
         self:UpdateFrameColor(frame)
         frame.needsColorUpdate = nil
+        frame.initialShow = nil
     end
     
     -- Update target text
@@ -271,7 +314,7 @@ function FrameManager:UpdateFrameUnitInfo(frame)
     end
 end
 
--- Update single frame color
+-- Update single frame color - IMPROVED
 function FrameManager:UpdateFrameColor(frame)
     if not frame or not NotPlater.ColorManager then return end
     
@@ -286,9 +329,22 @@ function FrameManager:UpdateFrameColor(frame)
         -- Get color with comprehensive detection
         local color, colorType = NotPlater.ColorManager:GetNameplateColor(frame, playerName, frame.unit)
         
-        if color then
-            -- Apply the color
+        -- If we get a real color (not fallback), apply it
+        if color and colorType ~= "fallback" then
             NotPlater.ColorManager:ApplyNameplateColor(frame, color, colorType)
+            frame.currentColorType = colorType
+        elseif frame.detectedReaction and not frame.currentColor then
+            -- Use our detected reaction if we don't have a better color yet
+            local reactionColors = NotPlater.db.profile.healthBar.coloring.reactionColors
+            local reactionColor = reactionColors[frame.detectedReaction]
+            if reactionColor then
+                NotPlater.ColorManager:ApplyNameplateColor(frame, reactionColor, "detected_" .. frame.detectedReaction)
+            end
+        end
+        
+        -- Continue trying to get better color detection
+        if not frame.unit or (frame.currentColorType and string.find(frame.currentColorType, "fallback")) then
+            frame.needsColorUpdate = true
         end
     end
 end
@@ -299,7 +355,7 @@ function FrameManager:UpdateAllFrameColors()
     
     for frame in pairs(managedFrames) do
         if frame:IsShown() then
-            -- Only update if frame doesn't have a recent color or is target
+            -- Always update if no color or fallback color
             local needsUpdate = false
             
             -- Always update target
@@ -308,7 +364,13 @@ function FrameManager:UpdateAllFrameColors()
             end
             
             -- Update if no color assigned
-            if not frame.currentColor then
+            if not frame.currentColor or not frame.currentColorType then
+                needsUpdate = true
+            end
+            
+            -- Update if we have a fallback or initial color
+            if frame.currentColorType and (string.find(frame.currentColorType, "fallback") or 
+                                           string.find(frame.currentColorType, "initial")) then
                 needsUpdate = true
             end
             
@@ -346,9 +408,8 @@ function FrameManager:CleanupDeadFrames()
             frame.healthBar.lastTextUpdate = nil
         end
         
-        if NotPlater.ColorManager then
-            NotPlater.ColorManager:ClearFrameColorCache(frame)
-        end
+        frame.detectedReaction = nil
+        frame.currentColorType = nil
     end
     
     -- Return dead frames to pool for reuse
@@ -382,10 +443,8 @@ end
 function FrameManager:RefreshAllColors()
     for frame in pairs(managedFrames) do
         if frame:IsShown() then
-            -- Clear existing color data
-            if NotPlater.ColorManager then
-                NotPlater.ColorManager:ClearFrameColorCache(frame)
-            end
+            -- Don't completely clear, just mark for update
+            frame.needsColorUpdate = true
             
             -- Force immediate update
             self:UpdateFrameColor(frame)
