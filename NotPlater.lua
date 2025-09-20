@@ -61,11 +61,6 @@ function NotPlater:InitializeCoreModules()
     if self.CacheManager then
         self.CacheManager:Initialize()
     end
-    
-    -- Initialize Threat Provider
-    if self.ThreatProvider then
-        self.ThreatProvider:Initialize()
-    end
 end
 
 -- Initialize cache modules
@@ -139,7 +134,6 @@ function NotPlater:PrepareFrame(frame)
     
     -- Construct components
     self:ConstructHealthBar(frame, health)
-    self:ConstructThreatComponents(frame.healthBar)
     self:ConstructThreatIcon(frame)
     self:ConstructCastBar(frame)
     self:ConstructTarget(frame)
@@ -156,7 +150,6 @@ function NotPlater:ReconfigureFrame(frame)
     local threatGlow, healthBorder, castBorder, castNoStop, spellIcon, highlightTexture, 
           nameText, levelText, dangerSkull, bossIcon, raidIcon = frame:GetRegions()
     
-    self:ConfigureThreatComponents(frame)
     self:ConfigureThreatIcon(frame)
     self:ConfigureHealthBar(frame, frame.healthBar and frame.healthBar:GetParent() or frame:GetChildren())
     self:ConfigureCastBar(frame)
@@ -174,6 +167,11 @@ function NotPlater:ReconfigureFrame(frame)
     
     self:ConfigureTarget(frame)
     self:TargetCheck(frame)
+    
+    -- Update nameplate colors
+    if self.ColorManager then
+        self.ColorManager:UpdateNameplateAppearance(frame)
+    end
 end
 
 -- Configure all frame components
@@ -183,7 +181,6 @@ function NotPlater:ConfigureFrame(frame)
     local health = frame:GetChildren()
     
     -- Configure all components
-    self:ConfigureThreatComponents(frame)
     self:ConfigureThreatIcon(frame)
     self:ConfigureHealthBar(frame, health)
     self:ConfigureCastBar(frame)
@@ -201,6 +198,11 @@ function NotPlater:ConfigureFrame(frame)
     
     self:ConfigureTarget(frame)
     self:TargetCheck(frame)
+    
+    -- Apply nameplate colors
+    if self.ColorManager then
+        self.ColorManager:UpdateNameplateAppearance(frame)
+    end
 end
 
 -- Reload settings
@@ -215,13 +217,6 @@ function NotPlater:Reload()
         self:RegisterCastBarEvents(self.frame)
     else
         self:UnregisterCastBarEvents(self.frame)
-    end
-    
-    -- Update mouseover events
-    if self.db.profile.threat.general.enableMouseoverUpdate then
-        self:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
-    else
-        self:UnregisterEvent("UPDATE_MOUSEOVER_UNIT")
     end
     
     -- Update all existing frames
@@ -240,51 +235,16 @@ function NotPlater:PLAYER_TARGET_CHANGED()
     end
 end
 
--- Update mouseover unit threat
-function NotPlater:UPDATE_MOUSEOVER_UNIT()
-    if not self.db.profile.threat.general.enableMouseoverUpdate then
-        return
-    end
-    
-    if UnitCanAttack("player", "mouseover") and not UnitIsDeadOrGhost("mouseover") and 
-       UnitAffectingCombat("mouseover") then
-        local mouseOverGuid = UnitGUID("mouseover")
-        local targetGuid = UnitGUID("target")
-        
-        if self.FrameManager then
-            local frames = self.FrameManager:GetManagedFrames()
-            for frame in pairs(frames) do
-                if frame:IsShown() then
-                    if mouseOverGuid == targetGuid and self:IsTarget(frame) then
-                        self:MouseoverThreatCheck(frame.healthBar, targetGuid)
-                        frame.highlightTexture:Show()
-                    else
-                        local nameText, levelText = select(7, frame:GetRegions())
-                        local name = nameText and nameText:GetText()
-                        local level = levelText and levelText:GetText()
-                        
-                        if name and level then
-                            local _, healthMaxValue = frame.healthBar:GetMinMaxValues()
-                            local healthValue = frame.healthBar:GetValue()
-                            
-                            if name == UnitName("mouseover") and 
-                               level == tostring(UnitLevel("mouseover")) and 
-                               healthValue == UnitHealth("mouseover") and 
-                               healthValue ~= healthMaxValue then
-                                self:MouseoverThreatCheck(frame.healthBar, mouseOverGuid)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
--- Simplified class check - mostly delegates to cache system
+-- Simplified class check - mostly delegates to ColorManager
 function NotPlater:ClassCheck(frame)
     if frame.unitClass then return end
     
+    -- Delegate to ColorManager
+    if self.ColorManager then
+        return self.ColorManager:ClassCheck(frame)
+    end
+    
+    -- Fallback for legacy compatibility
     local nameText, levelText = select(7, frame:GetRegions())
     if not nameText or not levelText then return end
     
@@ -340,23 +300,6 @@ function NotPlater:ClassCheck(frame)
                 frame.healthBar:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
             end
         end
-    end
-end
-
--- Mouseover threat check
-function NotPlater:MouseoverThreatCheck(healthFrame, guid)
-    if not healthFrame then return end
-    
-    local frame = healthFrame:GetParent()
-    if not frame then return end
-    
-    if not self.db.profile.threat.general.enableMouseoverUpdate then
-        return
-    end
-    
-    -- Update colors based on threat
-    if self.ColorManager then
-        self.ColorManager:UpdateNameplateAppearance(frame)
     end
 end
 

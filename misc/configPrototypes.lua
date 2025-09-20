@@ -12,93 +12,30 @@ NotPlater.ConfigPrototypes = ConfigPrototypes
 -- Return all registered SML textures
 local function GetTextures()
     local textures = {}
-	for _, name in pairs(NotPlater.SML:List(NotPlater.SML.MediaType.STATUSBAR)) do
-		textures[name] = name
-	end
-	
-	return textures
+    for _, name in pairs(NotPlater.SML:List(NotPlater.SML.MediaType.STATUSBAR)) do
+        textures[name] = name
+    end
+    
+    return textures
 end
 
 -- Return all registered SML fonts
 local function GetFonts()
-	local fonts = {}
-	for _, name in pairs(NotPlater.SML:List(NotPlater.SML.MediaType.FONT)) do
-		fonts[name] = name
-	end
-	
-	return fonts
+    local fonts = {}
+    for _, name in pairs(NotPlater.SML:List(NotPlater.SML.MediaType.FONT)) do
+        fonts[name] = name
+    end
+    
+    return fonts
 end
 
 local function GetIndicators()
-	local indicators = {}
-	for name, _ in pairs(NotPlater.targetIndicators) do
-		indicators[name] = name
-	end
-	
-	return indicators
-end
-
-function ConfigPrototypes:GetGeneralisedThreatColorsConfig(tank1, tank2, tank3, hdps1, hdps2, hdps3)
-    return {
-        order = 1,
-        type = "group",
-        inline = true,
-        name = L["Colors"],
-        args = {
-            tank = {
-                order = 0,
-                type = "group",
-                inline = true,
-                name = L["Tank"],
-                args = {
-                    c1 = {
-                        order = 0,
-                        type = "color",
-                        name = tank1,
-                        hasAlpha = true,
-                    },
-                    c2 = {
-                        order = 2,
-                        type = "color",
-                        name = tank2,
-                        hasAlpha = true,
-                    },
-                    c3 = {
-                        order = 4,
-                        type = "color",
-                        name = tank3,
-                        hasAlpha = true,
-                    },
-                },
-            },
-            hdps = {
-                order = 1,
-                type = "group",
-                inline = true,
-                name = L["DPS / Healer"],
-                args = {
-                    c1 = {
-                        order = 0,
-                        type = "color",
-                        name = hdps1,
-                        hasAlpha = true,
-                    },
-                    c2 = {
-                        order = 2,
-                        type = "color",
-                        name = hdps2,
-                        hasAlpha = true,
-                    },
-                    c3 = {
-                        order = 4,
-                        type = "color",
-                        name = hdps3,
-                        hasAlpha = true,
-                    },
-                },
-            },
-        },
-    }
+    local indicators = {}
+    for name, _ in pairs(NotPlater.targetIndicators) do
+        indicators[name] = name
+    end
+    
+    return indicators
 end
 
 function ConfigPrototypes:GetGeneralisedPositionConfig()
@@ -291,13 +228,6 @@ function ConfigPrototypes:GetGeneralisedColorFontConfig()
     return config
 end
 
-function ConfigPrototypes:GetGeneralisedThreatFontConfig(tank1, tank2, tank3, hdps1, hdps2, hdps3)
-    local config = self:GetGeneralisedFontConfig()
-    config.colors = self:GetGeneralisedThreatColorsConfig(tank1, tank2, tank3, hdps1, hdps2, hdps3)
-
-    return config
-end
-
 function ConfigPrototypes:GetGeneralisedStatusBarConfig()
     return {
         general = {
@@ -310,12 +240,6 @@ function ConfigPrototypes:GetGeneralisedStatusBarConfig()
                     order = 0,
                     type = "toggle",
                     name = L["Enable"],
-                },
-                color = {
-                    order = 1,
-                    type = "color",
-                    name = L["Color"],
-                    hasAlpha = true,
                 },
                 texture = {
                     order = 2,
@@ -419,68 +343,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
             },
         },
     }
-    ConfigPrototypes.ThreatGeneral = {
-        mode = {
-            order = 0,
-            type = "select",
-            name = L["Mode"],
-            desc = L["Select your role for threat coloring"],
-            values = {["hdps"] = L["Healer / DPS"], ["tank"] = L["Tank"]},
-        },
-        useColoredThreatNameplates = {
-            order = 1,
-            type = "toggle",
-            name = L["Use Colored Threat Nameplates"],
-            desc = L["Enable nameplate coloring based on threat. When disabled, nameplates will use default colors."],
-            width = "double",
-        },
-        enableMouseoverUpdate = {
-            order = 2,
-            type = "toggle",
-            name = L["Enable Mouseover Nameplate Threat Update"],
-            width = "double",
-        },
-    }
-    ConfigPrototypes.ThreatNameplateColors = {
-        general = {
-        order = 0,
-        type = "group",
-        inline = true,
-        name = L["General"],
-        args = {
-            enable = {
-                order = 0,
-                type = "toggle",
-                name = L["Enable"],
-                disabled = function()
-                    return not NotPlater.db.profile.threat.general.useColoredThreatNameplates
-                end,
-            },
-            useClassColors = {
-                order = 1,
-                type = "toggle",
-                width = "double",
-                name = L["Use Class Colors when Possible"],
-                disabled = function()
-                    return not NotPlater.db.profile.threat.general.useColoredThreatNameplates
-                end,
-            },
-            playersOnly = {
-                order = 2,
-                type = "toggle",
-                name = L["Only apply Class Colors to Players"],
-                desc = L["When enabled, class colors will only be applied to player characters, not NPCs"],
-                width = "double",
-                disabled = function() 
-                    return not NotPlater.db.profile.threat.nameplateColors.general.useClassColors or
-                           not NotPlater.db.profile.threat.general.useColoredThreatNameplates
-                end,
-            },
-        }
-    },
-        colors = ConfigPrototypes:GetGeneralisedThreatColorsConfig(L["Aggro on You"], L["Tank no Aggro"], L["DPS Close"], L["Aggro on You"], L["High Threat"], L["No Aggro"])
-    }
-    ConfigPrototypes.ThreatNumberText = ConfigPrototypes:GetGeneralisedThreatFontConfig(L["Number 1 in Group"], L["Above 80% in Group"], L["Below 80% in Group"], L["Number 1 in Group"], L["Above 80% in Group"], L["Below 80% in Group"])
+    
     ConfigPrototypes.ThreatIcon = {
         general = {
             order = 0,
@@ -519,24 +382,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
         size = ConfigPrototypes:GetGeneralisedSizeConfig(),
         position = ConfigPrototypes:GetGeneralisedPositionConfig(),
     }
-    ConfigPrototypes.ThreatDifferentialText = ConfigPrototypes:GetGeneralisedThreatFontConfig(L["Aggro on You"], L["Tank no Aggro"], L["DPS Close"], L["Aggro on You"], L["High Threat"], L["No Aggro"])
-    ConfigPrototypes.ThreatPercentStatusBar = ConfigPrototypes:GetGeneralisedStatusBarConfig()
-    ConfigPrototypes.ThreatPercentStatusBar.position = ConfigPrototypes:GetGeneralisedPositionConfig()
-    ConfigPrototypes.ThreatPercentStatusBar.colors = ConfigPrototypes:GetGeneralisedThreatColorsConfig(L["100%"], L["Above 90%"], L["Below 90%"], L["100%"], L["Above 90%"], L["Below 90%"])
-    ConfigPrototypes.ThreatPercentStatusBar.general.args.enable.width = nil
-    ConfigPrototypes.ThreatPercentStatusBar.general.args.useThreatColors = {
-        order = 0.5,
-        type = "toggle",
-        name = L["Use Threat Colors"],
-    }
-    ConfigPrototypes.ThreatPercentText = ConfigPrototypes:GetGeneralisedColorFontConfig()
-    ConfigPrototypes.ThreatPercentText.colors = ConfigPrototypes:GetGeneralisedThreatColorsConfig(L["100%"], L["Above 90%"], L["Below 90%"], L["100%"], L["Above 90%"], L["Below 90%"])
-    ConfigPrototypes.ThreatPercentText.general.args.enable.width = nil
-    ConfigPrototypes.ThreatPercentText.general.args.useThreatColors = {
-        order = 0.5,
-        type = "toggle",
-        name = L["Use Threat Colors"],
-    }
+    
     ConfigPrototypes.CastBar = ConfigPrototypes:GetGeneralisedStatusBarConfig()
     ConfigPrototypes.CastBar.general.args.color = {
         order = 1,
@@ -545,6 +391,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
         hasAlpha = true,
     }
     ConfigPrototypes.CastBar.position = ConfigPrototypes:GetGeneralisedPositionConfig()
+    
     ConfigPrototypes.SpellTimeText = ConfigPrototypes:GetGeneralisedColorFontConfig()
     ConfigPrototypes.SpellTimeText.general.args.displayType = {
         order = 1,
@@ -552,6 +399,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
         name = L["Display Type"],
         values = {["crtmax"] = L["Current / Max"], ["none"] = L["None"], ["crt"] = L["Current"], ["percent"] = L["Percent"], ["timeleft"] = L["Time Left"]},
     }
+    
     ConfigPrototypes.SpellNameText = ConfigPrototypes:GetGeneralisedColorFontConfig()
     ConfigPrototypes.SpellNameText.general.args.maxLetters = {
         order = 5,
@@ -559,7 +407,206 @@ function ConfigPrototypes:LoadConfigPrototypes()
         name = L["Max. Letters"],
         min = 1, max = 40, step = 1,
     }
+    
+    -- Health Bar with new coloring system
     ConfigPrototypes.HealthBar = ConfigPrototypes:GetGeneralisedStatusBarConfig()
+    -- Add coloring system
+    ConfigPrototypes.HealthBar.coloring = {
+        order = 1.5,
+        type = "group",
+        inline = true,
+        name = L["Coloring System"],
+        args = {
+            system = {
+                order = 0,
+                type = "select",
+                name = L["Color System"],
+                desc = L["Choose how nameplate colors are determined"],
+                values = {
+                    ["reaction"] = L["Reaction Colors (Hostile/Friendly/Neutral)"],
+                    ["class"] = L["Class Colors"],
+                },
+                width = "full",
+            },
+            reactionColorsHeader = {
+                order = 1,
+                type = "header",
+                name = L["Reaction Colors"],
+                hidden = function() 
+                    return NotPlater.db.profile.healthBar.coloring.system ~= "reaction" 
+                end,
+            },
+            hostile = {
+                order = 2,
+                type = "color",
+                name = L["Hostile"],
+                desc = L["Color for hostile units"],
+                hasAlpha = true,
+                hidden = function() 
+                    return NotPlater.db.profile.healthBar.coloring.system ~= "reaction" 
+                end,
+                get = function(info)
+                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.hostile
+                    return color.r, color.g, color.b, color.a
+                end,
+                set = function(info, r, g, b, a)
+                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.hostile
+                    color.r, color.g, color.b, color.a = r, g, b, a
+                    NotPlater:Reload()
+                end,
+            },
+            neutral = {
+                order = 3,
+                type = "color",
+                name = L["Neutral"],
+                desc = L["Color for neutral units"],
+                hasAlpha = true,
+                hidden = function() 
+                    return NotPlater.db.profile.healthBar.coloring.system ~= "reaction" 
+                end,
+                get = function(info)
+                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.neutral
+                    return color.r, color.g, color.b, color.a
+                end,
+                set = function(info, r, g, b, a)
+                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.neutral
+                    color.r, color.g, color.b, color.a = r, g, b, a
+                    NotPlater:Reload()
+                end,
+            },
+            friendly = {
+                order = 4,
+                type = "color",
+                name = L["Friendly"],
+                desc = L["Color for friendly units"],
+                hasAlpha = true,
+                hidden = function() 
+                    return NotPlater.db.profile.healthBar.coloring.system ~= "reaction" 
+                end,
+                get = function(info)
+                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.friendly
+                    return color.r, color.g, color.b, color.a
+                end,
+                set = function(info, r, g, b, a)
+                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.friendly
+                    color.r, color.g, color.b, color.a = r, g, b, a
+                    NotPlater:Reload()
+                end,
+            },
+            classColorsHeader = {
+                order = 5,
+                type = "header",
+                name = L["Class Colors"],
+                hidden = function() 
+                    return NotPlater.db.profile.healthBar.coloring.system ~= "class" 
+                end,
+            },
+            classColorsEnable = {
+                order = 6,
+                type = "toggle",
+                name = L["Use Class Colors"],
+                desc = L["Apply class colors to nameplates"],
+                width = "full",
+                hidden = function() 
+                    return NotPlater.db.profile.healthBar.coloring.system ~= "class" 
+                end,
+                get = function(info)
+                    return NotPlater.db.profile.healthBar.coloring.classColors.enable
+                end,
+                set = function(info, val)
+                    NotPlater.db.profile.healthBar.coloring.classColors.enable = val
+                    NotPlater:Reload()
+                end,
+            },
+            playersOnly = {
+                order = 7,
+                type = "toggle",
+                name = L["Only apply Class Colors to Players"],
+                desc = L["When enabled, class colors will only be applied to player characters, not NPCs"],
+                width = "full",
+                hidden = function() 
+                    return NotPlater.db.profile.healthBar.coloring.system ~= "class" 
+                end,
+                disabled = function() 
+                    return not NotPlater.db.profile.healthBar.coloring.classColors.enable
+                end,
+                get = function(info)
+                    return NotPlater.db.profile.healthBar.coloring.classColors.playersOnly
+                end,
+                set = function(info, val)
+                    NotPlater.db.profile.healthBar.coloring.classColors.playersOnly = val
+                    NotPlater:Reload()
+                end,
+            },
+        }
+    }
+    
+    -- Unit Filters
+    ConfigPrototypes.HealthBar.unitFilters = {
+        order = 1.6,
+        type = "group",
+        inline = true,
+        name = L["Unit Filters"],
+        args = {
+            showPlayerTotems = {
+                order = 0,
+                type = "toggle",
+                name = L["Show Other Player Totems"],
+                desc = L["Display nameplates for other players' totems"],
+                width = "full",
+                get = function(info)
+                    return NotPlater.db.profile.healthBar.unitFilters.showPlayerTotems
+                end,
+                set = function(info, val)
+                    NotPlater.db.profile.healthBar.unitFilters.showPlayerTotems = val
+                    NotPlater:Reload()
+                end,
+            },
+            showOwnTotems = {
+                order = 1,
+                type = "toggle",
+                name = L["Show Own Totems"],
+                desc = L["Display nameplates for your own totems"],
+                width = "full",
+                get = function(info)
+                    return NotPlater.db.profile.healthBar.unitFilters.showOwnTotems
+                end,
+                set = function(info, val)
+                    NotPlater.db.profile.healthBar.unitFilters.showOwnTotems = val
+                    NotPlater:Reload()
+                end,
+            },
+            showOwnPet = {
+                order = 2,
+                type = "toggle",
+                name = L["Show Own Pet/Minion"],
+                desc = L["Display nameplates for your own pet or minion"],
+                width = "full",
+                get = function(info)
+                    return NotPlater.db.profile.healthBar.unitFilters.showOwnPet
+                end,
+                set = function(info, val)
+                    NotPlater.db.profile.healthBar.unitFilters.showOwnPet = val
+                    NotPlater:Reload()
+                end,
+            },
+            showOtherPlayerPets = {
+                order = 3,
+                type = "toggle",
+                name = L["Show Other Player Pets/Minions"],
+                desc = L["Display nameplates for other players' pets and minions"],
+                width = "full",
+                get = function(info)
+                    return NotPlater.db.profile.healthBar.unitFilters.showOtherPlayerPets
+                end,
+                set = function(info, val)
+                    NotPlater.db.profile.healthBar.unitFilters.showOtherPlayerPets = val
+                    NotPlater:Reload()
+                end,
+            },
+        }
+    }
+    
     ConfigPrototypes.HealthText = ConfigPrototypes:GetGeneralisedColorFontConfig()
     ConfigPrototypes.HealthText.general.args.displayType = {
         order = 1,
@@ -592,11 +639,6 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     width = "full",
                     name = L["Scaling Factor"],
                     min = 1, max = 2, step = 0.01,
-                },
-                threat = {
-                    order = 1,
-                    type = "toggle",
-                    name = L["Threat Components"],
                 },
                 healthBar = {
                     order = 2,
@@ -632,6 +674,11 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     order = 8,
                     type = "toggle",
                     name = L["Target-Target Text"],
+                },
+                threatIcon = {
+                    order = 9,
+                    type = "toggle",
+                    name = L["Threat Icon"],
                 },
             },
         },

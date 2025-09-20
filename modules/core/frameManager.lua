@@ -124,7 +124,7 @@ function FrameManager:OnNameplateShow(frame)
         NotPlater.CacheManager:CheckAllCaches(frame, playerName)
     end
     
-    -- Update visual appearance
+    -- Update visual appearance using ColorManager
     if NotPlater.ColorManager then
         NotPlater.ColorManager:UpdateNameplateAppearance(frame)
     end
@@ -137,11 +137,6 @@ function FrameManager:OnNameplateShow(frame)
     -- Update stacking
     if NotPlater.StackingCheck then
         NotPlater:StackingCheck(frame)
-    end
-    
-    -- Update threat components
-    if NotPlater.ThreatComponentsOnShow then
-        NotPlater:ThreatComponentsOnShow(frame)
     end
     
     -- Check if target
@@ -159,7 +154,7 @@ function FrameManager:OnNameplateHide(frame)
         NotPlater.ColorManager:ClearFrameColorCache(frame)
     end
     
-    -- Clear threat cache
+    -- Clear unit data
     frame.unit = nil
     frame.unitGUID = nil
     frame.wasTarget = nil
@@ -169,6 +164,11 @@ function FrameManager:OnNameplateHide(frame)
         frame.castBar:Hide()
         frame.castBar.casting = nil
         frame.castBar.channeling = nil
+    end
+    
+    -- Hide threat icon
+    if frame.threatIcon then
+        frame.threatIcon:Hide()
     end
 end
 
@@ -191,7 +191,7 @@ function FrameManager:OnNameplateUpdate(frame)
         frame.targetChanged = nil
     end
     
-    -- Update threat icon
+    -- Update threat icon if enabled
     if NotPlater.db.profile.threatIcon and NotPlater.db.profile.threatIcon.general.enable then
         if NotPlater.UpdateThreatIcon then
             -- Try to find unit for threat calculation
@@ -214,28 +214,18 @@ function FrameManager:OnNameplateUpdate(frame)
                 end
             end
             
-            if frame.unit then
-                NotPlater:UpdateThreatIcon(frame)
-            end
+            NotPlater:UpdateThreatIcon(frame)
         end
     end
     
-    -- Update colors if needed
-    if not frame.unitClass and NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
+    -- Update colors if needed using ColorManager
+    if not frame.unitClass and NotPlater.ColorManager then
         local nameText = select(7, frame:GetRegions())
         local playerName = nameText and nameText:GetText()
         
         if playerName then
-            -- Try cache checks
-            local foundClass = false
-            if NotPlater.CacheManager then
-                foundClass = NotPlater.CacheManager:CheckAllCaches(frame, playerName)
-            end
-            
-            -- Fallback to direct class check
-            if not foundClass and NotPlater.ClassCheck then
-                NotPlater:ClassCheck(frame)
-            end
+            -- Let ColorManager handle class checking
+            NotPlater.ColorManager:ClassCheck(frame)
         end
     end
     
@@ -244,11 +234,16 @@ function FrameManager:OnNameplateUpdate(frame)
         NotPlater:SetTargetTargetText(frame)
     end
     
-    -- Handle alpha changes
+    -- Handle alpha changes for non-target nameplates
     if isTarget then
         frame:SetAlpha(1)
     elseif NotPlater.db.profile.target.general.nonTargetAlpha.enable then
         frame:SetAlpha(NotPlater.db.profile.target.general.nonTargetAlpha.opacity)
+    end
+    
+    -- Periodic color updates for non-cached frames
+    if not frame.unitClass and NotPlater.ColorManager then
+        NotPlater.ColorManager:UpdateNameplateAppearance(frame)
     end
 end
 
@@ -292,6 +287,12 @@ end
 function FrameManager:UpdateAllFrames()
     for frame in pairs(managedFrames) do
         if frame:IsShown() then
+            -- Update colors using ColorManager
+            if NotPlater.ColorManager then
+                NotPlater.ColorManager:UpdateNameplateAppearance(frame)
+            end
+            
+            -- Update other components
             self:OnNameplateUpdate(frame)
         end
     end

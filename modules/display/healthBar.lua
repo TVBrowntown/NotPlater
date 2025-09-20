@@ -70,7 +70,10 @@ function NotPlater:HealthOnValueChanged(oldHealthBar, value)
 		end
 	end
 
-	self:ThreatCheck(oldHealthBar:GetParent())
+	-- Update nameplate colors through ColorManager instead of old ThreatCheck
+	if self.ColorManager then
+		self.ColorManager:UpdateNameplateAppearance(oldHealthBar:GetParent())
+	end
 end
 
 function NotPlater:ScaleHealthBar(healthFrame, isTarget)
@@ -89,29 +92,57 @@ function NotPlater:HealthBarOnShow(oldHealthBar)
 		return
 	end
 	
-	-- Check if oldHealthBar has GetStatusBarColor method (i.e., is actually a StatusBar)
-	if oldHealthBar.GetStatusBarColor then
-		local r, g, b, a = oldHealthBar:GetStatusBarColor()
-		if r and g and b then
-			oldHealthBar.healthBar:SetStatusBarColor(r, g, b, a or 1)
-		else
-			-- Fallback to default health bar color if no color is available
-			local healthBarConfig = self.db.profile.healthBar
-			if healthBarConfig and healthBarConfig.statusBar and healthBarConfig.statusBar.general then
-				oldHealthBar.healthBar:SetStatusBarColor(self:GetColor(healthBarConfig.statusBar.general.color))
-			end
-		end
+	local frame = oldHealthBar:GetParent()
+	
+	-- Apply color using the new ColorManager
+	if self.ColorManager then
+		self.ColorManager:UpdateNameplateAppearance(frame)
 	else
-		-- oldHealthBar is not a StatusBar frame, use default color
-		local healthBarConfig = self.db.profile.healthBar
-		if healthBarConfig and healthBarConfig.statusBar and healthBarConfig.statusBar.general then
-			oldHealthBar.healthBar:SetStatusBarColor(self:GetColor(healthBarConfig.statusBar.general.color))
+		-- Fallback: Check if oldHealthBar has GetStatusBarColor method
+		if oldHealthBar.GetStatusBarColor then
+			local r, g, b, a = oldHealthBar:GetStatusBarColor()
+			if r and g and b then
+				oldHealthBar.healthBar:SetStatusBarColor(r, g, b, a or 1)
+			else
+				-- Fallback to default health bar color
+				self:ApplyDefaultHealthBarColor(oldHealthBar.healthBar)
+			end
+		else
+			-- Apply default color
+			self:ApplyDefaultHealthBarColor(oldHealthBar.healthBar)
 		end
 	end
 	
 	-- Set up highlight texture
 	if oldHealthBar.healthBar.highlightTexture then
 		oldHealthBar.healthBar.highlightTexture:SetAllPoints(oldHealthBar.healthBar)
+	end
+end
+
+-- Apply default health bar color based on coloring system
+function NotPlater:ApplyDefaultHealthBarColor(healthBar)
+	if not healthBar then return end
+	
+	local coloringSystem = self.db.profile.healthBar.coloring.system
+	local color
+	
+	if coloringSystem == "reaction" then
+		-- Use hostile color as default
+		color = self.db.profile.healthBar.coloring.reactionColors.hostile
+	else
+		-- Use the default health bar color from config
+		local healthBarConfig = self.db.profile.healthBar
+		if healthBarConfig and healthBarConfig.statusBar and healthBarConfig.statusBar.general then
+			-- For class color system, use a neutral blue as default
+			color = {r = 0.5, g = 0.5, b = 1, a = 1}
+		else
+			-- Ultimate fallback
+			color = {r = 1, g = 0, b = 0, a = 1} -- Red
+		end
+	end
+	
+	if color then
+		healthBar:SetStatusBarColor(color.r, color.g, color.b, color.a or 1)
 	end
 end
 
@@ -124,8 +155,8 @@ function NotPlater:ConfigureHealthBar(frame, oldHealthBar)
 	local healthBarConfig = self.db.profile.healthBar
 	local healthFrame = frame.healthBar
 	
-	-- Configure statusbar
-	self:ConfigureGeneralisedStatusBar(healthFrame, healthBarConfig.statusBar)
+	-- Configure statusbar (without color - ColorManager handles that)
+	self:ConfigureGeneralisedStatusBarWithoutColor(healthFrame, healthBarConfig.statusBar)
 
 	-- Set points
 	healthFrame:ClearAllPoints()
@@ -197,6 +228,34 @@ function NotPlater:ConfigureHealthBar(frame, oldHealthBar)
 				end
 			end
 		end
+	end
+	
+	-- Apply colors using ColorManager
+	if self.ColorManager then
+		self.ColorManager:UpdateNameplateAppearance(frame)
+	end
+end
+
+-- Configure status bar without color (color is handled by ColorManager)
+function NotPlater:ConfigureGeneralisedStatusBarWithoutColor(bar, config)
+	-- Set textures for health- and castbar
+	bar:SetStatusBarTexture(self.SML:Fetch(self.SML.MediaType.STATUSBAR, config.general.texture))
+
+	-- Set background
+	if config.background.enable then
+		bar.background:SetTexture(self.SML:Fetch(self.SML.MediaType.STATUSBAR, config.background.texture))
+		bar.background:SetVertexColor(self:GetColor(config.background.color))
+		bar.background:Show()
+	else
+		bar.background:Hide()
+	end
+
+	-- Set border
+	if config.border.enable then
+		self:ConfigureFullBorder(bar.border, bar, config.border)
+		bar.border:Show()
+	else
+		bar.border:Hide()
 	end
 end
 
