@@ -1,5 +1,5 @@
 -- modules/recentlySeenCache.lua
--- Recently Seen Players Cache - Performance Optimized
+-- Fixed Recently Seen Players Cache - Performance Optimized
 
 -- Don't do anything if NotPlater doesn't exist
 if not NotPlater then return end
@@ -43,25 +43,47 @@ local function SafeInitialize()
         end
     end
 
+    -- Safe access to config with defaults
+    local function GetConfig()
+        if NotPlater.db and NotPlater.db.profile and NotPlater.db.profile.recentlySeenCache then
+            return NotPlater.db.profile.recentlySeenCache
+        end
+        -- Return defaults if config not available
+        return {
+            general = {
+                enable = true,
+                useRecentlySeenColors = true,
+                showCacheMessages = false,
+                pruneDays = 7,
+                maxEntries = 500,
+            },
+            advanced = {
+                debugMode = false,
+            }
+        }
+    end
+
+    -- Check if cache is enabled
+    function RecentlySeenCache:IsEnabled()
+        local config = GetConfig()
+        return config.general.enable
+    end
+
     -- Prune old entries (only called on login/reload)
     function RecentlySeenCache:PruneOldEntries()
-        if not NotPlater.db or not NotPlater.db.profile then
-            return
-        end
-        
-        local settings = NotPlater.db.profile.recentlySeenCache.general
-        if not settings.enable then
+        local config = GetConfig()
+        if not config.general.enable then
             return
         end
         
         local currentTime = GetTime()
-        local cutoffTime = currentTime - (settings.pruneDays * 86400) -- Convert days to seconds
+        local cutoffTime = currentTime - (config.general.pruneDays * 86400) -- Convert days to seconds
         local prunedCount = 0
         
         -- Important: Don't reassign cache, modify it in place
         local toRemove = {}
         for name, data in pairs(cache) do
-            if data.lastSeen < cutoffTime then
+            if data.lastSeen and data.lastSeen < cutoffTime then
                 table.insert(toRemove, name)
                 prunedCount = prunedCount + 1
             end
@@ -75,16 +97,16 @@ local function SafeInitialize()
         cacheStats.pruned = cacheStats.pruned + prunedCount
         
         -- Limit cache size if needed
-        local maxEntries = settings.maxEntries or 500
+        local maxEntries = config.general.maxEntries or 500
         local cacheSize = self:GetCacheSize()
         
         if cacheSize > maxEntries then
             self:RemoveOldestEntries(cacheSize - maxEntries)
         end
         
-        if settings.showCacheMessages and prunedCount > 0 then
+        if config.general.showCacheMessages and prunedCount > 0 then
             SafePrint(string.format("Recently Seen Cache: Pruned %d old entries (older than %d days)", 
-                prunedCount, settings.pruneDays))
+                prunedCount, config.general.pruneDays))
         end
         
         -- Save pruned cache
@@ -98,7 +120,7 @@ local function SafeInitialize()
         -- Create sorted list by lastSeen time
         local sorted = {}
         for name, data in pairs(cache) do
-            table.insert(sorted, {name = name, lastSeen = data.lastSeen})
+            table.insert(sorted, {name = name, lastSeen = data.lastSeen or 0})
         end
         
         table.sort(sorted, function(a, b) return a.lastSeen < b.lastSeen end)
@@ -124,7 +146,8 @@ local function SafeInitialize()
         if not playerName or not classFileName then return false end
         
         -- Don't cache if disabled
-        if not NotPlater.db.profile.recentlySeenCache.general.enable then
+        local config = GetConfig()
+        if not config.general.enable then
             return false
         end
         
@@ -171,22 +194,22 @@ local function SafeInitialize()
             classFileName = classFileName,
             level = level or 0,
             lastSeen = GetTime(),
-            classColor = colorCopy
+            classColor = colorCopy,
+            isPlayer = true
         }
         
         if isNew then
             cacheStats.added = cacheStats.added + 1
             
             -- Check cache size limit
-            local settings = NotPlater.db.profile.recentlySeenCache.general
-            local maxEntries = settings.maxEntries or 500
+            local maxEntries = config.general.maxEntries or 500
             local cacheSize = self:GetCacheSize()
             
             if cacheSize > maxEntries then
                 -- Remove oldest entry
                 local oldestName, oldestTime
                 for n, data in pairs(cache) do
-                    if not oldestTime or data.lastSeen < oldestTime then
+                    if not oldestTime or (data.lastSeen and data.lastSeen < oldestTime) then
                         oldestTime = data.lastSeen
                         oldestName = n
                     end
@@ -231,8 +254,9 @@ local function SafeInitialize()
         end
         
         -- Try case-insensitive match as last resort
+        local lowerName = string.lower(playerName)
         for name, cacheData in pairs(cache) do
-            if string.lower(name) == string.lower(playerName) then
+            if string.lower(name) == lowerName then
                 cacheStats.hits = cacheStats.hits + 1
                 cacheData.lastSeen = GetTime()
                 return cacheData
@@ -243,138 +267,9 @@ local function SafeInitialize()
         return nil
     end
 
-    -- Apply cached class colors to nameplate (main performance function)
-    function RecentlySeenCache:ApplyClassColors(frame, playerName)
-        -- Safety checks
-        if not frame or not playerName then
-            return false
-        end
-        
-        -- Clear any existing class data first
-        frame.unitClass = nil
-        frame.unitClassFromCache = nil
-        
-        -- Don't apply if disabled or class colors are disabled
-        if not NotPlater.db.profile.recentlySeenCache.general.enable or
-           not NotPlater.db.profile.recentlySeenCache.general.useRecentlySeenColors or
-           not NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
-            return false
-        end
-        
-        local data = self:GetPlayerData(playerName)
-        if not data or not data.classColor then
-            if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-                SafePrint("Cache Debug: No data for " .. playerName)
-            end
-            return false
-        end
-        
-        -- Make sure healthBar exists
-        if not frame.healthBar then
-            if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-                SafePrint("Cache Debug: No healthBar on frame for: " .. playerName)
-            end
-            return false
-        end
-        
-        -- Create a fresh color copy for this frame to avoid reference issues
-        local colorCopy = {
-            r = data.classColor.r,
-            g = data.classColor.g,
-            b = data.classColor.b
-        }
-        
-        -- Verify the color values are valid
-        if not colorCopy.r or not colorCopy.g or not colorCopy.b then
-            SafePrint("Cache Error: Invalid color data for " .. playerName)
-            return false
-        end
-        
-        -- Apply the color
-        frame.healthBar:SetStatusBarColor(colorCopy.r, colorCopy.g, colorCopy.b, 1)
-        
-        -- Store a copy on the frame for other systems
-        frame.unitClass = colorCopy
-        frame.recentlySeen = {
-            class = data.class,
-            classFileName = data.classFileName,
-            level = data.level
-        }
-        
-        -- Mark that we found a class so other checks don't override
-        frame.unitClassFromCache = true
-        
-        if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
-            SafePrint(string.format("Cache Debug: Applied %s color (r=%.2f g=%.2f b=%.2f) to %s", 
-                data.class or "Unknown", colorCopy.r, colorCopy.g, colorCopy.b, playerName))
-        end
-        
-        return true
-    end
-
-    -- Enhanced nameplate check that includes recently seen cache
-    function RecentlySeenCache:EnhancedClassCheck(frame)
-        if not frame then return false end
-        
-        -- Early exit if disabled
-        if not NotPlater.db.profile.recentlySeenCache.general.enable or
-           not NotPlater.db.profile.recentlySeenCache.general.useRecentlySeenColors or
-           not NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
-            return false
-        end
-        
-        -- Get the name from the nameplate
-        local nameText = select(7, frame:GetRegions())
-        if not nameText then return false end
-        
-        local playerName = nameText:GetText()
-        if not playerName then return false end
-        
-        -- Check if we already processed this name
-        if frame.lastCheckedName == playerName and frame.unitClass then
-            return true
-        end
-        
-        -- Clear any existing class data first
-        frame.unitClassFromCache = nil
-        
-        -- Get data from cache
-        local data = self:GetPlayerData(playerName)
-        if not data or not data.classColor then
-            return false
-        end
-        
-        -- Make sure healthBar exists
-        if not frame.healthBar then
-            return false
-        end
-        
-        -- Create a fresh color copy for this frame
-        local colorCopy = {
-            r = data.classColor.r,
-            g = data.classColor.g,
-            b = data.classColor.b
-        }
-        
-        -- Verify the color values are valid
-        if not colorCopy.r or not colorCopy.g or not colorCopy.b then
-            return false
-        end
-        
-        -- Apply the color
-        frame.healthBar:SetStatusBarColor(colorCopy.r, colorCopy.g, colorCopy.b, 1)
-        
-        -- Store on the frame
-        frame.unitClass = colorCopy
-        frame.recentlySeen = {
-            class = data.class,
-            classFileName = data.classFileName,
-            level = data.level
-        }
-        frame.unitClassFromCache = true
-        frame.lastCheckedName = playerName
-        
-        return true
+    -- Get member data (alias for GetPlayerData for compatibility)
+    function RecentlySeenCache:GetMemberData(playerName)
+        return self:GetPlayerData(playerName)
     end
 
     -- Save cache to SavedVariables (AceDB aware)
@@ -396,7 +291,8 @@ local function SafeInitialize()
         NotPlater.db.global.recentlySeenCache.version = 1
         NotPlater.db.global.recentlySeenCache.lastSave = GetTime()
         
-        if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+        local config = GetConfig()
+        if config.advanced.debugMode then
             local count = self:GetCacheSize()
             SafePrint(string.format("Cache Debug: Saved %d players to AceDB", count))
         end
@@ -406,7 +302,8 @@ local function SafeInitialize()
     function RecentlySeenCache:LoadCache()
         -- Wait for AceDB to be ready
         if not NotPlater.db or not NotPlater.db.global or not NotPlater.db.global.recentlySeenCache then
-            if NotPlater.db and NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+            local config = GetConfig()
+            if config.advanced.debugMode then
                 SafePrint("Cache Debug: AceDB not ready or no saved cache exists")
             end
             -- Initialize empty cache
@@ -432,11 +329,12 @@ local function SafeInitialize()
             }
             
             local loadedCount = self:GetCacheSize()
-            if NotPlater.db.profile.recentlySeenCache.general.showCacheMessages then
+            local config = GetConfig()
+            if config.general.showCacheMessages then
                 SafePrint(string.format("Recently Seen Cache: Loaded %d players", loadedCount))
             end
             
-            if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+            if config.advanced.debugMode then
                 SafePrint(string.format("Cache Debug: Successfully loaded from AceDB, last save: %.1f seconds ago", 
                     saved.lastSave and (GetTime() - saved.lastSave) or -1))
                 -- List first few players for verification
@@ -457,7 +355,8 @@ local function SafeInitialize()
                 pruned = 0
             }
             
-            if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+            local config = GetConfig()
+            if config.advanced.debugMode then
                 SafePrint("Cache Debug: No saved data in AceDB, starting fresh")
             end
         end
@@ -474,7 +373,8 @@ local function SafeInitialize()
         cacheStats.pruned = 0
         self:SaveCache()
         
-        if NotPlater.db.profile.recentlySeenCache.general.showCacheMessages then
+        local config = GetConfig()
+        if config.general.showCacheMessages then
             SafePrint("Recently Seen Cache: Cleared all entries")
         end
     end
@@ -501,7 +401,7 @@ local function SafeInitialize()
                 class = data.class,
                 classColor = data.classColor,
                 level = data.level,
-                lastSeen = data.lastSeen
+                lastSeen = data.lastSeen or 0
             })
         end
         
@@ -559,7 +459,8 @@ local function SafeInitialize()
         -- Load cache immediately since AceDB is ready
         self:LoadCache()
         
-        if NotPlater.db.profile.recentlySeenCache.advanced.debugMode then
+        local config = GetConfig()
+        if config.advanced.debugMode then
             local count = self:GetCacheSize()
             SafePrint(string.format("Recently Seen Cache: Initialized with %d entries", count))
         end

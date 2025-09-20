@@ -310,33 +310,69 @@ function Config:OnInitialize()
 end
 
 local function SetValue(...)
-	local args = {}
-	local numArgs = #...
-	tinsert(args, NotPlater.db.profile)
-	for k, v in ipairs(...) do
-		tinsert(args, args[k][v])
+	local args = {...}
+	local numArgs = #args
+	
+	-- Safety check
+	if not NotPlater.db or not NotPlater.db.profile then
+		return
 	end
-	local lastArgName = select(1, ...)[numArgs]
-	local values = {select(2, ...)}
-	if #values > 1 then
-		args[numArgs][lastArgName] = values
-	else
-		args[numArgs][lastArgName] = select(2, ...)
+	
+	local current = NotPlater.db.profile
+	
+	-- Navigate to the target location, creating tables as needed
+	for i = 1, numArgs - 1 do
+		local key = args[i]
+		if not current[key] then
+			current[key] = {}
+		end
+		current = current[key]
 	end
-	NotPlater:Reload()
+	
+	-- Set the final value
+	local finalKey = args[numArgs - 1]
+	local value = args[numArgs]
+	
+	if finalKey and current then
+		current[finalKey] = value
+		NotPlater:EnhancedReload()
+	end
 end
 
 local function GetValue(...)
-	local args = {}
-	local numArgs = #...
-	tinsert(args, NotPlater.db.profile)
-	for k, v in ipairs(...) do
-		tinsert(args, args[k][v])
+	local args = {...}
+	local numArgs = #args
+	
+	-- Safety check
+	if not NotPlater.db or not NotPlater.db.profile then
+		return nil
 	end
-	if type(args[numArgs + 1]) == "table" then
-		return unpack(args[numArgs + 1])
+	
+	local current = NotPlater.db.profile
+	
+	-- Navigate to the target value
+	for i = 1, numArgs do
+		local key = args[i]
+		if not current or not current[key] then
+			return nil
+		end
+		current = current[key]
+	end
+	
+	-- Handle table vs single value
+	if type(current) == "table" then
+		-- Check if it's a color table with r,g,b values
+		if current.r and current.g and current.b then
+			return current.r, current.g, current.b, current.a or 1
+		end
+		-- Otherwise try to unpack if it's an array
+		local success, result = pcall(unpack, current)
+		if success then
+			return result
+		end
+		return current
 	else
-		return args[numArgs + 1]
+		return current
 	end
 end
 
@@ -346,22 +382,98 @@ local function LoadOptions()
 	options.name = "NotPlater"
 	options.args = {}
 	
-	-- Load options without threat section but with threatIcon
+	-- Helper function to ensure config structure exists
+	local function EnsureConfigPath(...)
+		local path = {...}
+		local current = NotPlater.db.profile
+		for i = 1, #path do
+			if not current[path[i]] then
+				current[path[i]] = {}
+			end
+			current = current[path[i]]
+		end
+		return current
+	end
+	
+	-- Enhanced GetValue that creates missing structure
+	local function EnhancedGetValue(info)
+		if not NotPlater.db or not NotPlater.db.profile then
+			return nil
+		end
+		
+		local current = NotPlater.db.profile
+		for i = 1, #info do
+			if not current[info[i]] then
+				return nil
+			end
+			current = current[info[i]]
+		end
+		
+		if type(current) == "table" then
+			-- Handle color tables
+			if current.r and current.g and current.b then
+				return current.r, current.g, current.b, current.a or 1
+			end
+			-- Try to unpack arrays
+			local success, result = pcall(unpack, current)
+			if success then
+				return result
+			end
+		end
+		
+		return current
+	end
+	
+	-- Enhanced SetValue that creates missing structure
+	local function EnhancedSetValue(info, ...)
+		if not NotPlater.db or not NotPlater.db.profile then
+			return
+		end
+		
+		local values = {...}
+		local current = NotPlater.db.profile
+		
+		-- Navigate to parent, creating structure as needed
+		for i = 1, #info - 1 do
+			if not current[info[i]] then
+				current[info[i]] = {}
+			end
+			current = current[info[i]]
+		end
+		
+		-- Set the value
+		local key = info[#info]
+		if #values > 1 then
+			current[key] = values
+		else
+			current[key] = values[1]
+		end
+		
+		-- Trigger reload
+		if NotPlater.EnhancedReload then
+			NotPlater:EnhancedReload()
+		else
+			NotPlater:Reload()
+		end
+	end
+	
+	-- Threat Icon options
 	options.args.threatIcon = {
 	    order = 0.5,
 	    type = "group",
 	    name = L["Threat Icon"],
-	    get = GetValue,
-	    set = SetValue,
+	    get = EnhancedGetValue,
+	    set = EnhancedSetValue,
 	    args = NotPlater.ConfigPrototypes.ThreatIcon
 	}
 	
+	-- Health Bar options
 	options.args.healthBar = {
 		type = "group",
 		order = 1,
 		name = L["Health Bar"],
-		get = GetValue,
-		set = SetValue,
+		get = EnhancedGetValue,
+		set = EnhancedSetValue,
 		childGroups = "tab",
 		args = {
 			statusBar = {
@@ -379,12 +491,13 @@ local function LoadOptions()
 		},
 	}
 	
+	-- Cast Bar options
 	options.args.castBar = {
 		type = "group",
 		order = 2,
 		name = L["Cast Bar"],
-		get = GetValue,
-		set = SetValue,
+		get = EnhancedGetValue,
+		set = EnhancedSetValue,
 		childGroups = "tab",
 		args =  {
 			statusBar = {
@@ -414,48 +527,53 @@ local function LoadOptions()
 		},
 	}
 	
+	-- Name Text options
 	options.args.nameText = {
 		order = 3,
 		type = "group",
 		name = L["Name Text"],
-		get = GetValue,
-		set = SetValue,
+		get = EnhancedGetValue,
+		set = EnhancedSetValue,
 		args = NotPlater.ConfigPrototypes.NameText
 	}
 	
+	-- Level Text options
 	options.args.levelText = {
 		order = 4,
 		type = "group",
 		name = L["Level Text"],
-		get = GetValue,
-		set = SetValue,
+		get = EnhancedGetValue,
+		set = EnhancedSetValue,
 		args = NotPlater.ConfigPrototypes.LevelText
 	}
 	
+	-- Raid Icon options
 	options.args.raidIcon = {
 		order = 5,
 		type = "group",
 		name = L["Raid Icon"],
-		get = GetValue,
-		set = SetValue,
+		get = EnhancedGetValue,
+		set = EnhancedSetValue,
 		args = NotPlater.ConfigPrototypes.Icon
 	}
 	
+	-- Boss Icon options
 	options.args.bossIcon = {
 		order = 6,
 		type = "group",
 		name = L["Boss Icon"],
-		get = GetValue,
-		set = SetValue,
+		get = EnhancedGetValue,
+		set = EnhancedSetValue,
 		args = NotPlater.ConfigPrototypes.Icon
 	}
 	
+	-- Target options
 	options.args.target = {
 		order = 7,
 		type = "group",
 		name = L["Target"],
-		get = GetValue,
-		set = SetValue,
+		get = EnhancedGetValue,
+		set = EnhancedSetValue,
 		childGroups = "tab",
 		args = {
 			general = {
@@ -473,14 +591,13 @@ local function LoadOptions()
 		}
 	}
 	
-	-- Add Guild Cache only if the prototypes exist
+	-- Add cache options only if prototypes exist
 	if NotPlater.ConfigPrototypes.GuildCache then
 		options.args.guildCache = {
 			order = 8,
 			type = "group",
 			name = L["Guild Cache"],
-			get = GetValue,
-			set = SetValue,
+			-- These use their own get/set functions from the prototypes
 			args = NotPlater.ConfigPrototypes.GuildCache
 		}
 	end
@@ -490,8 +607,7 @@ local function LoadOptions()
 		    order = 9,
 		    type = "group",
 		    name = L["Party/Raid Cache"],
-		    get = GetValue,
-		    set = SetValue,
+		    -- These use their own get/set functions from the prototypes
 		    args = NotPlater.ConfigPrototypes.PartyRaidCache
 		}
 	end
@@ -501,23 +617,70 @@ local function LoadOptions()
 			order = 10,
 			type = "group",
 			name = L["Recently Seen Cache"],
-			get = GetValue,
-			set = SetValue,
+			-- These use their own get/set functions from the prototypes
 			args = NotPlater.ConfigPrototypes.RecentlySeenCache
 		}
 	end
 	
+	-- Simulator options
 	options.args.simulator = {
 		order = 11,
 		type = "group",
 		name = L["Simulator"],
-		get = GetValue,
-		set = SetValue,
+		get = EnhancedGetValue,
+		set = EnhancedSetValue,
 		args = NotPlater.ConfigPrototypes.Simulator
 	}
 
+	-- Profile options
 	options.args.profile = LibStub("AceDBOptions-3.0"):GetOptionsTable(NotPlater.db)
 	options.args.profile.order = 12
+	
+	-- Ensure all default config paths exist
+	if NotPlater.db and NotPlater.db.profile then
+		-- Ensure threat icon config exists
+		EnsureConfigPath("threatIcon", "general")
+		EnsureConfigPath("threatIcon", "size")
+		EnsureConfigPath("threatIcon", "position")
+		
+		-- Ensure health bar config exists
+		EnsureConfigPath("healthBar", "statusBar", "general")
+		EnsureConfigPath("healthBar", "statusBar", "background")
+		EnsureConfigPath("healthBar", "statusBar", "size")
+		EnsureConfigPath("healthBar", "statusBar", "border")
+		EnsureConfigPath("healthBar", "coloring")
+		EnsureConfigPath("healthBar", "coloring", "reactionColors")
+		EnsureConfigPath("healthBar", "coloring", "classColors")
+		EnsureConfigPath("healthBar", "healthText", "general")
+		EnsureConfigPath("healthBar", "healthText", "position")
+		EnsureConfigPath("healthBar", "healthText", "shadow")
+		
+		-- Set defaults if missing
+		if not NotPlater.db.profile.threatIcon.general.enable then
+			NotPlater.db.profile.threatIcon.general.enable = true
+		end
+		if not NotPlater.db.profile.threatIcon.general.opacity then
+			NotPlater.db.profile.threatIcon.general.opacity = 1
+		end
+		if not NotPlater.db.profile.threatIcon.general.visibility then
+			NotPlater.db.profile.threatIcon.general.visibility = "combat"
+		end
+		if not NotPlater.db.profile.threatIcon.size.width then
+			NotPlater.db.profile.threatIcon.size.width = 36
+		end
+		if not NotPlater.db.profile.threatIcon.size.height then
+			NotPlater.db.profile.threatIcon.size.height = 36
+		end
+		if not NotPlater.db.profile.threatIcon.position.anchor then
+			NotPlater.db.profile.threatIcon.position.anchor = "RIGHT"
+		end
+		if not NotPlater.db.profile.threatIcon.position.xOffset then
+			NotPlater.db.profile.threatIcon.position.xOffset = -32
+		end
+		if not NotPlater.db.profile.threatIcon.position.yOffset then
+			NotPlater.db.profile.threatIcon.position.yOffset = 0
+		end
+	end
 end
 
 function Config:ToggleConfig()
@@ -533,18 +696,36 @@ end
 
 function Config:OpenConfig()
 	if( not registered ) then
-		if( not options ) then
+		-- Ensure prototypes are loaded first
+		if not NotPlater.ConfigPrototypes or not NotPlater.ConfigPrototypes.HealthBar then
 			NotPlater.ConfigPrototypes:LoadConfigPrototypes()
+		end
+		
+		-- Ensure config structure exists
+		if NotPlater.db and NotPlater.db.profile and NotPlater.MigrateConfig then
+			NotPlater:MigrateConfig()
+		end
+		
+		if( not options ) then
 			LoadOptions()
+		end
+
+		-- Validate that we have the necessary data
+		if not options or not options.args then
+			DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Error loading config options")
+			return
 		end
 
 		config:RegisterOptionsTable("NotPlater", options)
 		dialog:SetDefaultSize("NotPlater", 850, 650)
 		registered = true
 	end
-	if NotPlater.db.profile.simulator.general.showOnConfig then
+	
+	if NotPlater.db and NotPlater.db.profile and NotPlater.db.profile.simulator and 
+	   NotPlater.db.profile.simulator.general and NotPlater.db.profile.simulator.general.showOnConfig then
 		NotPlater:ShowSimulatorFrame()
 	end
+	
 	dialog:Open("NotPlater")
 end
 
@@ -570,6 +751,19 @@ SlashCmdList["NOTPLATER"] = function(input)
         NotPlater:ExportSettingsString()
     elseif msg == "import" then
         NotPlater:ShowImportFrame()
+    elseif msg == "reset" then
+        if NotPlater.ResetConfig then
+            NotPlater:ResetConfig()
+        else
+            NotPlater:Print("Reset function not available")
+        end
+    elseif msg == "migrate" then
+        if NotPlater.MigrateConfig then
+            NotPlater:MigrateConfig()
+            NotPlater:Print("Configuration migration completed")
+        else
+            NotPlater:Print("Migration function not available")
+        end
 	elseif msg == "help" then
         NotPlater:PrintHelp()
 	else
@@ -586,4 +780,6 @@ function NotPlater:PrintHelp()
     self:Print(L["/np minimap - Toggle the minimap icon"])
     self:Print("/np export - Export settings as shareable string")
     self:Print("/np import - Import settings from string")
+    self:Print("/np reset - Reset configuration to defaults")
+    self:Print("/np migrate - Migrate old configuration to new format")
 end

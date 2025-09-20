@@ -1593,3 +1593,8 @@ function ConfigPrototypes:LoadConfigPrototypes()
         },
     }
 end
+
+-- Ensure prototypes are loaded when this file is processed
+if ConfigPrototypes and ConfigPrototypes.LoadConfigPrototypes then
+    ConfigPrototypes:LoadConfigPrototypes()
+end

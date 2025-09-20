@@ -12,16 +12,52 @@ local UnitGUID = UnitGUID
 local UnitExists = UnitExists
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
--- Initialize addon
+-- Initialize addon with proper order and error handling
+-- Initialize addon with proper order, error handling, and config migration
 function NotPlater:OnInitialize()
     -- Create the main frame first
     self.frame = CreateFrame("Frame")
     
-    -- Load configuration
-    self:LoadDefaultConfig()
-    self.db = LibStub:GetLibrary("AceDB-3.0"):New("NotPlaterDB", self.defaults)
+    -- Load configuration with error handling
+    local success, err = pcall(function()
+        self:LoadDefaultConfig()
+        self.db = LibStub:GetLibrary("AceDB-3.0"):New("NotPlaterDB", self.defaults)
+    end)
     
-    -- Initialize core systems
+    if not success then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Error loading config: " .. tostring(err))
+        -- Create minimal config as fallback
+        self.db = {
+            profile = {
+                healthBar = {
+                    coloring = {
+                        system = "reaction",
+                        reactionColors = {
+                            hostile = {r = 1, g = 0, b = 0, a = 1},
+                            neutral = {r = 1, g = 1, b = 0, a = 1},
+                            friendly = {r = 0, g = 1, b = 0, a = 1}
+                        },
+                        classColors = {
+                            enable = true,
+                            playersOnly = true
+                        }
+                    }
+                },
+                threatIcon = {
+                    general = {enable = true, opacity = 1, visibility = "combat"},
+                    size = {width = 36, height = 36},
+                    position = {anchor = "RIGHT", xOffset = -32, yOffset = 0}
+                },
+                threat = {general = {mode = "hdps"}}
+            },
+            global = {}
+        }
+    else
+        -- Migrate old config structure if needed
+        self:MigrateConfig()
+    end
+    
+    -- Initialize core systems in proper order
     self:InitializeCoreModules()
     
     -- Set up party/raid tracking
@@ -47,6 +83,25 @@ function NotPlater:OnInitialize()
     -- Initialize caches with delay
     C_Timer.After(0.1, function()
         self:InitializeCaches()
+    end)
+    
+    -- Initialize enhanced systems with additional delay
+    C_Timer.After(0.5, function()
+        self:InitializeEnhancedSystems()
+    end)
+    
+    -- Final setup and config validation
+    C_Timer.After(1, function()
+        -- Force config interface refresh if it exists
+        if self.db and self.db.profile then
+            -- Trigger a save to ensure all defaults are written
+            local currentProfile = self.db:GetCurrentProfile()
+            self.db:SetProfile(currentProfile)
+        end
+        
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Initialization complete")
+        end
     end)
 end
 
@@ -79,6 +134,75 @@ function NotPlater:InitializeCaches()
     if self.RecentlySeenCache and self.RecentlySeenCache.Initialize then
         self.RecentlySeenCache:Initialize()
     end
+end
+
+-- Enhanced initialization with proper order
+function NotPlater:InitializeEnhancedSystems()
+    -- Initialize ColorManager after all other systems are ready
+    if self.ColorManager then
+        self.ColorManager:Initialize()
+        
+        -- Force initial color refresh after everything is loaded
+        C_Timer.After(2, function()
+            if self.FrameManager then
+                self.FrameManager:RefreshAllColors()
+            end
+        end)
+    end
+end
+
+-- Improved nameplate color update
+function NotPlater:UpdateNameplateColors(frame)
+    if not frame or not self.ColorManager then return end
+    
+    -- Mark frame for immediate color update
+    frame.needsColorUpdate = true
+    
+    -- Update immediately if it's target or mouseover
+    local nameText = select(7, frame:GetRegions())
+    local playerName = nameText and nameText:GetText()
+    
+    if playerName then
+        -- Immediate update for target
+        if self:IsTarget(frame) then
+            self.ColorManager:UpdateNameplateAppearance(frame)
+        end
+        
+        -- Immediate update for mouseover
+        if UnitExists("mouseover") and playerName == UnitName("mouseover") then
+            self.ColorManager:UpdateNameplateAppearance(frame)
+        end
+    end
+end
+
+-- Enhanced reload function that ensures proper color updates
+function NotPlater:EnhancedReload()
+    -- Call original reload
+    self:Reload()
+    
+    -- Force color system refresh
+    if self.ColorManager then
+        -- Clear persistent cache if system changed
+        self.ColorManager:SavePersistentCache()
+        
+        -- Update all visible nameplates immediately
+        if self.FrameManager then
+            self.FrameManager:RefreshAllColors()
+        end
+    end
+end
+
+-- Override the original Reload function to use enhanced version
+local originalReload = NotPlater.Reload
+NotPlater.Reload = function(self)
+    originalReload(self)
+    
+    -- Additional enhancements
+    C_Timer.After(0.1, function()
+        if self.FrameManager then
+            self.FrameManager:UpdateAllFrames()
+        end
+    end)
 end
 
 -- Check if frame is target
@@ -235,72 +359,92 @@ function NotPlater:PLAYER_TARGET_CHANGED()
     end
 end
 
--- Simplified class check - mostly delegates to ColorManager
+-- Simplified class check - delegates to ColorManager with fallback
 function NotPlater:ClassCheck(frame)
-    if frame.unitClass then return end
+    if not frame then return false end
     
-    -- Delegate to ColorManager
+    -- Delegate to ColorManager if available
     if self.ColorManager then
         return self.ColorManager:ClassCheck(frame)
     end
     
-    -- Fallback for legacy compatibility
+    -- Fallback for legacy compatibility (shouldn't be needed with new system)
     local nameText, levelText = select(7, frame:GetRegions())
-    if not nameText or not levelText then return end
+    if not nameText or not levelText then return false end
     
     local name = nameText:GetText()
-    if not name then return end
+    if not name then return false end
+    
+    -- Check if we already have class info
+    if frame.unitClass and frame.lastCheckedName == name then
+        return true
+    end
     
     -- Try cache manager first
     if self.CacheManager then
         if self.CacheManager:CheckAllCaches(frame, name) then
-            return
+            frame.lastCheckedName = name
+            return true
         end
     end
     
-    -- Fallback to direct detection
+    -- Quick unit checks for immediate feedback
     local level = levelText:GetText()
-    local healthValue = frame.healthBar and frame.healthBar:GetValue()
-    
-    if not level or not healthValue then return end
     
     -- Check target
-    if self:IsTarget(frame) then
+    if self:IsTarget(frame) and UnitExists("target") then
         local className, classFileName = UnitClass("target")
         if classFileName and RAID_CLASS_COLORS[classFileName] then
-            frame.unitClass = RAID_CLASS_COLORS[classFileName]
+            local color = {
+                r = RAID_CLASS_COLORS[classFileName].r,
+                g = RAID_CLASS_COLORS[classFileName].g,
+                b = RAID_CLASS_COLORS[classFileName].b
+            }
+            frame.unitClass = color
+            frame.lastCheckedName = name
             
-            -- Add to recently seen cache
-            if self.RecentlySeenCache and self.RecentlySeenCache.AddPlayer then
+            -- Apply color immediately
+            if frame.healthBar then
+                frame.healthBar:SetStatusBarColor(color.r, color.g, color.b, 1)
+            end
+            
+            -- Add to recently seen cache if available
+            if self.RecentlySeenCache and self.RecentlySeenCache.AddPlayer and UnitIsPlayer("target") then
                 self.RecentlySeenCache:AddPlayer(name, className, classFileName, UnitLevel("target"))
             end
             
-            -- Apply color
-            if frame.healthBar then
-                frame.healthBar:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
-            end
-            return
+            return true
         end
     end
     
     -- Check mouseover
-    if name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) and 
-       healthValue == UnitHealth("mouseover") then
+    if UnitExists("mouseover") and name == UnitName("mouseover") and 
+       level == tostring(UnitLevel("mouseover")) then
         local className, classFileName = UnitClass("mouseover")
         if classFileName and RAID_CLASS_COLORS[classFileName] then
-            frame.unitClass = RAID_CLASS_COLORS[classFileName]
+            local color = {
+                r = RAID_CLASS_COLORS[classFileName].r,
+                g = RAID_CLASS_COLORS[classFileName].g,
+                b = RAID_CLASS_COLORS[classFileName].b
+            }
+            frame.unitClass = color
+            frame.lastCheckedName = name
             
-            -- Add to recently seen cache
+            -- Apply color immediately
+            if frame.healthBar then
+                frame.healthBar:SetStatusBarColor(color.r, color.g, color.b, 1)
+            end
+            
+            -- Add to recently seen cache if available
             if self.RecentlySeenCache and self.RecentlySeenCache.AddPlayer and UnitIsPlayer("mouseover") then
                 self.RecentlySeenCache:AddPlayer(name, className, classFileName, UnitLevel("mouseover"))
             end
             
-            -- Apply color
-            if frame.healthBar then
-                frame.healthBar:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
-            end
+            return true
         end
     end
+    
+    return false
 end
 
 -- Party/Raid roster updates
@@ -349,4 +493,170 @@ function NotPlater:PARTY_MEMBERS_CHANGED()
             self.party[pet] = "pet"
         end
     end
+end
+
+-- Migrate old config to new structure
+function NotPlater:MigrateConfig()
+    if not self.db or not self.db.profile then
+        return
+    end
+    
+    local profile = self.db.profile
+    
+    -- Migrate old threat config structure if it exists
+    if profile.threat and not profile.threatIcon then
+        profile.threatIcon = {
+            general = {
+                enable = true,
+                opacity = 1,
+                visibility = "combat"
+            },
+            size = {
+                width = 36,
+                height = 36
+            },
+            position = {
+                anchor = "RIGHT",
+                xOffset = -32,
+                yOffset = 0
+            }
+        }
+    end
+    
+    -- Ensure basic threat config exists
+    if not profile.threat then
+        profile.threat = {
+            general = {
+                mode = "hdps"
+            }
+        }
+    end
+    
+    -- Migrate old nameplate colors config if it exists
+    if profile.threat and profile.threat.nameplateColors and not profile.healthBar.coloring then
+        profile.healthBar = profile.healthBar or {}
+        profile.healthBar.coloring = {
+            system = profile.threat.nameplateColors.general.useClassColors and "class" or "reaction",
+            reactionColors = {
+                hostile = {r = 1, g = 0, b = 0, a = 1},
+                neutral = {r = 1, g = 1, b = 0, a = 1},
+                friendly = {r = 0, g = 1, b = 0, a = 1}
+            },
+            classColors = {
+                enable = profile.threat.nameplateColors.general.useClassColors or true,
+                playersOnly = true
+            }
+        }
+    end
+    
+    -- Ensure health bar coloring config exists with defaults
+    if not profile.healthBar then
+        profile.healthBar = {}
+    end
+    if not profile.healthBar.coloring then
+        profile.healthBar.coloring = {
+            system = "reaction",
+            reactionColors = {
+                hostile = {r = 1, g = 0, b = 0, a = 1},
+                neutral = {r = 1, g = 1, b = 0, a = 1},
+                friendly = {r = 0, g = 1, b = 0, a = 1}
+            },
+            classColors = {
+                enable = true,
+                playersOnly = true
+            }
+        }
+    end
+    
+    -- Ensure all required structure exists
+    local function EnsureTable(path)
+        local current = profile
+        for i = 1, #path do
+            if not current[path[i]] then
+                current[path[i]] = {}
+            end
+            current = current[path[i]]
+        end
+        return current
+    end
+    
+    -- Ensure basic structure
+    EnsureTable({"healthBar", "statusBar", "general"})
+    EnsureTable({"healthBar", "statusBar", "background"})
+    EnsureTable({"healthBar", "statusBar", "size"})
+    EnsureTable({"healthBar", "statusBar", "border"})
+    EnsureTable({"healthBar", "healthText", "general"})
+    EnsureTable({"healthBar", "healthText", "position"})
+    EnsureTable({"healthBar", "healthText", "shadow"})
+    EnsureTable({"castBar", "statusBar", "general"})
+    EnsureTable({"nameText", "general"})
+    EnsureTable({"levelText", "general"})
+    EnsureTable({"target", "general"})
+    
+    -- Apply missing defaults for health bar
+    if not profile.healthBar.statusBar.general.enable then
+        profile.healthBar.statusBar.general.enable = true
+    end
+    if not profile.healthBar.statusBar.general.texture then
+        profile.healthBar.statusBar.general.texture = "NotPlater HealthBar"
+    end
+    if not profile.healthBar.statusBar.size.width then
+        profile.healthBar.statusBar.size.width = 112
+    end
+    if not profile.healthBar.statusBar.size.height then
+        profile.healthBar.statusBar.size.height = 14
+    end
+    
+    -- Apply missing defaults for threat icon
+    if not profile.threatIcon then
+        profile.threatIcon = {
+            general = {
+                enable = true,
+                opacity = 1,
+                visibility = "combat"
+            },
+            size = {
+                width = 36,
+                height = 36
+            },
+            position = {
+                anchor = "RIGHT",
+                xOffset = -32,
+                yOffset = 0
+            }
+        }
+    end
+    
+    if self.Print then
+        self:Print("Configuration migrated to new structure")
+    end
+end
+
+-- Reset config to defaults (accessible via /np reset)
+function NotPlater:ResetConfig()
+    if not self.db then
+        self:Print("Database not available")
+        return
+    end
+    
+    -- Reset to defaults
+    self.db:ResetProfile()
+    
+    -- Apply defaults
+    self:LoadDefaultConfig()
+    for key, value in pairs(self.defaults.profile) do
+        self.db.profile[key] = value
+    end
+    
+    -- Migrate and validate
+    self:MigrateConfig()
+    
+    -- Reload everything
+    if self.EnhancedReload then
+        self:EnhancedReload()
+    else
+        self:Reload()
+    end
+    
+    self:Print("Configuration reset to defaults")
 end
