@@ -12,6 +12,12 @@ function NotPlater:LoadDefaultConfig()
                     pruned = 0
                 },
                 version = 1
+            },
+            -- Add persistent color cache for nameplates
+            persistentColors = {
+                data = {},
+                lastUpdate = 0,
+                version = 1
             }
         },
         profile = {
@@ -63,6 +69,12 @@ function NotPlater:LoadDefaultConfig()
                     anchor = "RIGHT",
                     xOffset = -32,
                     yOffset = 0,
+                },
+            },
+            -- Simplified threat config (removed old UI components)
+            threat = {
+                general = {
+                    mode = "hdps",
                 },
             },
             healthBar = {
@@ -320,7 +332,7 @@ function NotPlater:LoadDefaultConfig()
                         },
                         highlight = {
                             enable = true,
-                            texture = NotPlater.defaultHighlightTexture,
+                            texture = NotPlater and NotPlater.defaultHighlightTexture or "",
                             color = {0, 0.521568, 1, 0.75},
                             thickness = 14
                         },

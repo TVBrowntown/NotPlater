@@ -1,5 +1,5 @@
 -- modules/core/colorManager.lua
--- Centralized nameplate color management system
+-- Simplified and fixed nameplate color management system
 
 if not NotPlater then return end
 
@@ -15,24 +15,138 @@ local UnitCreatureType = UnitCreatureType
 local UnitName = UnitName
 local UnitClass = UnitClass
 local UnitReaction = UnitReaction
+local UnitLevel = UnitLevel
+local UnitGUID = UnitGUID
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
+local GetTime = GetTime
+local strsplit = strsplit
+
+-- Persistent color cache
+local persistentColorCache = {}
+local cacheCleanupTimer = 0
 
 -- Initialize the color manager
 function ColorManager:Initialize()
-    -- Color manager is ready
+    -- Load persistent cache
+    self:LoadPersistentCache()
+    
+    -- Set up cleanup timer
+    self:SetupCacheCleanup()
 end
 
--- Try to find unit ID for a nameplate by name matching
-function ColorManager:FindUnitForNameplate(frame, playerName)
-    if not frame or not playerName then
-        return nil
+-- Load persistent cache from saved variables
+function ColorManager:LoadPersistentCache()
+    if NotPlater.db and NotPlater.db.global and NotPlater.db.global.persistentColors then
+        persistentColorCache = NotPlater.db.global.persistentColors.data or {}
+    end
+end
+
+-- Save persistent cache to saved variables
+function ColorManager:SavePersistentCache()
+    if NotPlater.db and NotPlater.db.global then
+        if not NotPlater.db.global.persistentColors then
+            NotPlater.db.global.persistentColors = {}
+        end
+        NotPlater.db.global.persistentColors.data = persistentColorCache
+        NotPlater.db.global.persistentColors.lastUpdate = GetTime()
+    end
+end
+
+-- Set up cache cleanup timer
+function ColorManager:SetupCacheCleanup()
+    local cleanupFrame = CreateFrame("Frame")
+    cleanupFrame.elapsed = 0
+    cleanupFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.elapsed = self.elapsed + elapsed
+        if self.elapsed >= 30 then -- Clean every 30 seconds
+            self.elapsed = 0
+            ColorManager:CleanupOldCacheEntries()
+        end
+        
+        -- Save cache every 60 seconds
+        cacheCleanupTimer = cacheCleanupTimer + elapsed
+        if cacheCleanupTimer >= 60 then
+            cacheCleanupTimer = 0
+            ColorManager:SavePersistentCache()
+        end
+    end)
+end
+
+-- Clean up old cache entries
+function ColorManager:CleanupOldCacheEntries()
+    local currentTime = GetTime()
+    local maxAge = 7 * 24 * 60 * 60 -- 7 days in seconds
+    
+    for name, data in pairs(persistentColorCache) do
+        if data.lastSeen and (currentTime - data.lastSeen) > maxAge then
+            persistentColorCache[name] = nil
+        end
+    end
+end
+
+-- Store color in persistent cache
+function ColorManager:StoreColorInCache(playerName, color, source, className, classFileName, level)
+    if not playerName or not color then return end
+    
+    -- Handle server names
+    local name = playerName
+    if string.find(playerName, "-") then
+        name = strsplit("-", playerName)
     end
     
-    -- Get level for more accurate matching
-    local levelText = select(8, frame:GetRegions())
-    local level = levelText and levelText:GetText()
+    -- Store in persistent cache
+    persistentColorCache[name] = {
+        color = {
+            r = color.r,
+            g = color.g,
+            b = color.b
+        },
+        source = source,
+        className = className,
+        classFileName = classFileName,
+        level = level,
+        lastSeen = GetTime()
+    }
+end
+
+-- Get color from persistent cache
+function ColorManager:GetColorFromCache(playerName)
+    if not playerName then return nil end
     
-    -- Check common units
+    -- Try exact match first
+    local data = persistentColorCache[playerName]
+    if data and data.color then
+        -- Update last seen time
+        data.lastSeen = GetTime()
+        return {
+            r = data.color.r,
+            g = data.color.g,
+            b = data.color.b
+        }, data.source or "cache"
+    end
+    
+    -- Handle server names
+    if string.find(playerName, "-") then
+        local name = strsplit("-", playerName)
+        data = persistentColorCache[name]
+        if data and data.color then
+            data.lastSeen = GetTime()
+            return {
+                r = data.color.r,
+                g = data.color.g,
+                b = data.color.b
+            }, data.source or "cache"
+        end
+    end
+    
+    return nil, nil
+end
+
+-- Comprehensive unit detection
+function ColorManager:FindAllUnitsForName(playerName, level)
+    if not playerName then return {} end
+    
+    local units = {}
     local unitsToCheck = {"target", "mouseover", "pet", "focus"}
     
     -- Add party members
@@ -41,6 +155,7 @@ function ColorManager:FindUnitForNameplate(frame, playerName)
             table.insert(unitsToCheck, "party" .. i)
             table.insert(unitsToCheck, "partypet" .. i)
         end
+        table.insert(unitsToCheck, "player")
     end
     
     -- Add raid members  
@@ -49,21 +164,20 @@ function ColorManager:FindUnitForNameplate(frame, playerName)
             table.insert(unitsToCheck, "raid" .. i)
             table.insert(unitsToCheck, "raidpet" .. i)
         end
+        table.insert(unitsToCheck, "player")
     end
     
-    -- Find matching unit
+    -- Check all units
     for _, unit in ipairs(unitsToCheck) do
         if UnitExists(unit) and UnitName(unit) == playerName then
-            -- Additional level check if available
+            -- Additional level check if provided
             if not level or level == tostring(UnitLevel(unit)) then
-                -- Store this unit info on the frame for future use
-                self:StoreUnitInfoOnFrame(frame, unit, playerName)
-                return unit
+                table.insert(units, unit)
             end
         end
     end
     
-    return nil
+    return units
 end
 
 -- Check if unit should have nameplate shown based on filters
@@ -73,35 +187,28 @@ function ColorManager:ShouldShowNameplate(frame, playerName)
         return true -- Default to showing if no filters configured
     end
     
-    -- Try to find unit if not provided
-    local unit = nil
-    if playerName then
-        unit = self:FindUnitForNameplate(frame, playerName)
+    -- Find any unit for this nameplate
+    local units = self:FindAllUnitsForName(playerName)
+    if #units == 0 then
+        return true -- Can't determine, show by default
     end
     
-    -- If we can't find a unit, default to showing
-    if not unit or not UnitExists(unit) then
-        return true
-    end
+    local unit = units[1] -- Use first found unit
     
     -- Check if it's a totem
     if self:IsTotem(unit) then
-        -- Check if it's our own totem
         if self:IsOwnUnit(unit) then
             return filters.showOwnTotems
         else
-            -- Other player's totem
             return filters.showPlayerTotems
         end
     end
     
     -- Check if it's a pet/minion
     if self:IsPetOrMinion(unit) then
-        -- Check if it's our own pet
         if self:IsOwnUnit(unit) or UnitIsUnit(unit, "pet") then
             return filters.showOwnPet
         else
-            -- Other player's pet
             return filters.showOtherPlayerPets
         end
     end
@@ -124,7 +231,6 @@ function ColorManager:IsTotem(unit)
     -- Additional totem detection based on name patterns
     local name = UnitName(unit)
     if name then
-        -- Common totem names (can be expanded)
         local totemPatterns = {
             "Totem", "Earthbind", "Searing", "Healing Stream", "Mana Spring",
             "Fire Nova", "Magma", "Stoneclaw", "Stoneskin", "Strength of Earth",
@@ -151,32 +257,7 @@ function ColorManager:IsPetOrMinion(unit)
     
     -- Check if it's player controlled but not a player
     if UnitPlayerControlled(unit) and not UnitIsPlayer(unit) then
-        local creatureType = UnitCreatureType(unit)
-        if creatureType then
-            -- Common pet/minion creature types
-            if creatureType == "Beast" or creatureType == "Demon" or 
-               creatureType == "Elemental" or creatureType == "Undead" then
-                return true
-            end
-        end
-        
-        -- Check name patterns for pets/minions
-        local name = UnitName(unit)
-        if name then
-            local petPatterns = {
-                "Pet", "Minion", "Ghoul", "Imp", "Voidwalker", "Succubus", 
-                "Felhunter", "Felguard", "Water Elemental", "Mirror Image",
-                "Shadowfiend", "Spirit Wolf", "Army of the Dead"
-            }
-            
-            for _, pattern in ipairs(petPatterns) do
-                if string.find(name, pattern) then
-                    return true
-                end
-            end
-        end
-        
-        return true -- Assume player controlled non-players are pets
+        return true
     end
     
     return false
@@ -193,222 +274,102 @@ function ColorManager:IsOwnUnit(unit)
         return true
     end
     
-    -- Check for player totems (they usually have player name in them or special detection)
-    local name = UnitName(unit)
-    local playerName = UnitName("player")
-    
-    if name and playerName then
-        -- Some totems might have player name
-        if string.find(name, playerName) then
-            return true
-        end
+    -- Check for player totems (simple approach - in practice more complex)
+    if self:IsTotem(unit) then
+        -- This is simplified - proper totem ownership detection would need more work
+        return false
     end
-    
-    -- For totems, we might need to use different detection methods
-    -- This is a simplified approach - in practice, totem ownership detection
-    -- can be more complex and might require additional addon APIs
     
     return false
 end
 
--- Store unit information on frame for persistence
-function ColorManager:StoreUnitInfoOnFrame(frame, unit, playerName)
-    if not frame or not unit or not UnitExists(unit) then
-        return
-    end
-    
-    -- Store basic unit info
-    frame.cachedUnitInfo = {
-        name = playerName or UnitName(unit),
-        level = UnitLevel(unit),
-        isPlayer = UnitIsPlayer(unit),
-        reaction = UnitReaction(unit, "player"),
-        lastUpdate = GetTime(),
-        unitType = unit
-    }
-    
-    -- Store class info if it's a player
-    if UnitIsPlayer(unit) then
-        local className, classFileName = UnitClass(unit)
-        if classFileName then
-            frame.cachedUnitInfo.className = className
-            frame.cachedUnitInfo.classFileName = classFileName
-            frame.cachedUnitInfo.classColor = RAID_CLASS_COLORS[classFileName]
-        end
-    end
-    
-    -- Store pet/ownership info
-    frame.cachedUnitInfo.isPet = UnitIsUnit(unit, "pet")
-    frame.cachedUnitInfo.isOwnUnit = self:IsOwnUnit(unit)
-    frame.cachedUnitInfo.isTotem = self:IsTotem(unit)
-    frame.cachedUnitInfo.isPetOrMinion = self:IsPetOrMinion(unit)
-end
-
--- Get cached unit info from frame
-function ColorManager:GetCachedUnitInfo(frame)
-    if not frame or not frame.cachedUnitInfo then
-        return nil
-    end
-    
-    -- Check if cache is still relatively fresh (within 30 seconds)
-    local currentTime = GetTime()
-    if currentTime - frame.cachedUnitInfo.lastUpdate > 30 then
-        return nil
-    end
-    
-    return frame.cachedUnitInfo
-end
-
--- Get nameplate color based on new system
-function ColorManager:GetNameplateColor(frame, playerName, unit)
-    if not frame then
-        return nil, nil
-    end
-    
-    local coloringSystem = NotPlater.db.profile.healthBar.coloring.system
-    
-    if coloringSystem == "class" then
-        -- Use class color system
-        return self:GetClassColorFromAllSources(frame, playerName, unit)
-    else
-        -- Use reaction color system (default)
-        return self:GetReactionColor(frame, unit)
-    end
-end
-
--- Get class color from all cache sources and direct detection
+-- Get class color with comprehensive detection and caching
 function ColorManager:GetClassColorFromAllSources(frame, playerName, unit)
     if not NotPlater.db.profile.healthBar.coloring.classColors.enable then
-        return self:GetReactionColor(frame, unit) -- Fallback to reaction colors
+        return self:GetReactionColor(frame, unit)
     end
     
-    -- Check if we should skip NPCs
     local playersOnly = NotPlater.db.profile.healthBar.coloring.classColors.playersOnly
     
-    -- Priority order: Cached info > Party/Raid > Guild > RecentlySeen > Direct detection
-    
-    -- 0. Check cached unit info first
-    local cachedInfo = self:GetCachedUnitInfo(frame)
-    if cachedInfo and cachedInfo.classColor and cachedInfo.isPlayer then
-        if not playersOnly or cachedInfo.isPlayer then
-            return cachedInfo.classColor, "cached"
-        end
+    -- 1. Check persistent cache first
+    local cachedColor, cacheSource = self:GetColorFromCache(playerName)
+    if cachedColor then
+        return cachedColor, cacheSource
     end
     
-    -- 1. Party/Raid Cache
+    -- 2. Try Party/Raid Cache
     if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.GetMemberData then
         local memberData = NotPlater.PartyRaidCache:GetMemberData(playerName)
         if memberData and memberData.classColor then
             if not playersOnly or memberData.isPlayer ~= false then
-                return memberData.classColor, "party_raid"
+                local color = {
+                    r = memberData.classColor.r,
+                    g = memberData.classColor.g,
+                    b = memberData.classColor.b
+                }
+                self:StoreColorInCache(playerName, color, "party_raid", memberData.class, memberData.classFileName, memberData.level)
+                return color, "party_raid"
             end
         end
     end
     
-    -- 2. Guild Cache
+    -- 3. Try Guild Cache
     if NotPlater.GuildCache and NotPlater.GuildCache.GetMemberData then
         local memberData = NotPlater.GuildCache:GetMemberData(playerName)
         if memberData and memberData.classColor then
             if not playersOnly or memberData.isPlayer ~= false then
-                return memberData.classColor, "guild"
+                local color = {
+                    r = memberData.classColor.r,
+                    g = memberData.classColor.g,
+                    b = memberData.classColor.b
+                }
+                self:StoreColorInCache(playerName, color, "guild", memberData.class, memberData.classFileName, memberData.level)
+                return color, "guild"
             end
         end
     end
     
-    -- 3. Recently Seen Cache
+    -- 4. Try Recently Seen Cache
     if NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.GetPlayerData then
         local data = NotPlater.RecentlySeenCache:GetPlayerData(playerName)
         if data and data.classColor then
             if not playersOnly or data.isPlayer ~= false then
-                -- Create a copy to avoid reference issues
-                local colorCopy = {
+                local color = {
                     r = data.classColor.r,
                     g = data.classColor.g,
                     b = data.classColor.b
                 }
-                return colorCopy, "recently_seen"
+                self:StoreColorInCache(playerName, color, "recently_seen", data.class, data.classFileName, data.level)
+                return color, "recently_seen"
             end
         end
     end
     
-    -- 4. Direct unit detection
-    if unit and UnitExists(unit) then
-        if not playersOnly or UnitIsPlayer(unit) then
-            local _, classFileName = UnitClass(unit)
-            if classFileName and RAID_CLASS_COLORS[classFileName] then
-                -- Store this info for future use
-                self:StoreUnitInfoOnFrame(frame, unit, playerName)
-                
-                -- Add to recently seen cache if it's a player
-                if UnitIsPlayer(unit) and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.AddPlayer then
-                    local className = UnitClass(unit)
-                    local level = UnitLevel(unit)
-                    NotPlater.RecentlySeenCache:AddPlayer(playerName, className, classFileName, level)
-                end
-                
-                return RAID_CLASS_COLORS[classFileName], "direct"
-            end
-        end
-    end
+    -- 5. Direct unit detection from all possible units
+    local nameText, levelText = select(7, frame:GetRegions())
+    local level = levelText and levelText:GetText()
+    local units = self:FindAllUnitsForName(playerName, level)
     
-    -- 5. Check target/mouseover if no unit provided
-    if not unit and playerName then
-        -- Try to find the unit using our improved detection
-        unit = self:FindUnitForNameplate(frame, playerName)
-        
-        if unit and UnitExists(unit) then
-            if not playersOnly or UnitIsPlayer(unit) then
-                local _, classFileName = UnitClass(unit)
+    for _, detectedUnit in ipairs(units) do
+        if UnitExists(detectedUnit) then
+            if not playersOnly or UnitIsPlayer(detectedUnit) then
+                local className, classFileName = UnitClass(detectedUnit)
                 if classFileName and RAID_CLASS_COLORS[classFileName] then
+                    local color = {
+                        r = RAID_CLASS_COLORS[classFileName].r,
+                        g = RAID_CLASS_COLORS[classFileName].g,
+                        b = RAID_CLASS_COLORS[classFileName].b
+                    }
+                    
+                    -- Store in cache for future use
+                    self:StoreColorInCache(playerName, color, "direct", className, classFileName, UnitLevel(detectedUnit))
+                    
                     -- Add to recently seen cache if it's a player
-                    if UnitIsPlayer(unit) and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.AddPlayer then
-                        local className = UnitClass(unit)
-                        local level = UnitLevel(unit)
-                        NotPlater.RecentlySeenCache:AddPlayer(playerName, className, classFileName, level)
+                    if UnitIsPlayer(detectedUnit) and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.AddPlayer then
+                        NotPlater.RecentlySeenCache:AddPlayer(playerName, className, classFileName, UnitLevel(detectedUnit))
                     end
                     
-                    return RAID_CLASS_COLORS[classFileName], "found_unit"
-                end
-            end
-        end
-        
-        -- Fallback to individual unit checks
-        -- Check target
-        if UnitExists("target") and playerName == UnitName("target") then
-            if not playersOnly or UnitIsPlayer("target") then
-                local _, classFileName = UnitClass("target")
-                if classFileName and RAID_CLASS_COLORS[classFileName] then
-                    -- Store this info
-                    self:StoreUnitInfoOnFrame(frame, "target", playerName)
-                    
-                    -- Add to recently seen cache
-                    if UnitIsPlayer("target") and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.AddPlayer then
-                        local className = UnitClass("target")
-                        local level = UnitLevel("target")
-                        NotPlater.RecentlySeenCache:AddPlayer(playerName, className, classFileName, level)
-                    end
-                    
-                    return RAID_CLASS_COLORS[classFileName], "target"
-                end
-            end
-        end
-        
-        -- Check mouseover
-        if UnitExists("mouseover") and playerName == UnitName("mouseover") then
-            if not playersOnly or UnitIsPlayer("mouseover") then
-                local _, classFileName = UnitClass("mouseover")
-                if classFileName and RAID_CLASS_COLORS[classFileName] then
-                    -- Store this info
-                    self:StoreUnitInfoOnFrame(frame, "mouseover", playerName)
-                    
-                    -- Add to recently seen cache
-                    if UnitIsPlayer("mouseover") and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.AddPlayer then
-                        local className = UnitClass("mouseover")
-                        local level = UnitLevel("mouseover")
-                        NotPlater.RecentlySeenCache:AddPlayer(playerName, className, classFileName, level)
-                    end
-                    
-                    return RAID_CLASS_COLORS[classFileName], "mouseover"
+                    return color, "direct"
                 end
             end
         end
@@ -429,9 +390,12 @@ function ColorManager:GetReactionColor(frame, unit)
         playerName = nameText and nameText:GetText()
     end
     
-    -- Try to find unit if not provided
+    -- Try to find units if not provided
     if not unit and playerName then
-        unit = self:FindUnitForNameplate(frame, playerName)
+        local units = self:FindAllUnitsForName(playerName)
+        if #units > 0 then
+            unit = units[1] -- Use first found unit
+        end
     end
     
     if unit and UnitExists(unit) then
@@ -444,13 +408,10 @@ function ColorManager:GetReactionColor(frame, unit)
         
         if reaction then
             if reaction <= 2 then
-                -- Hostile
                 return reactionColors.hostile, "hostile"
             elseif reaction == 4 then
-                -- Neutral
                 return reactionColors.neutral, "neutral"
             elseif reaction >= 5 then
-                -- Friendly
                 return reactionColors.friendly, "friendly"
             end
         end
@@ -462,50 +423,46 @@ function ColorManager:GetReactionColor(frame, unit)
         end
     end
     
-    -- Try to get reaction from common units if no unit provided
+    -- Try common units as fallback
     if not unit and playerName then
-        -- Check target
-        if UnitExists("target") and playerName == UnitName("target") then
-            if UnitIsUnit("target", "pet") then
-                return reactionColors.friendly, "own_pet"
-            end
-            local reaction = UnitReaction("target", "player")
-            if reaction then
-                if reaction <= 2 then
-                    return reactionColors.hostile, "hostile"
-                elseif reaction == 4 then
-                    return reactionColors.neutral, "neutral"
-                elseif reaction >= 5 then
-                    return reactionColors.friendly, "friendly"
+        local commonUnits = {"target", "mouseover", "pet"}
+        for _, checkUnit in ipairs(commonUnits) do
+            if UnitExists(checkUnit) and playerName == UnitName(checkUnit) then
+                if UnitIsUnit(checkUnit, "pet") then
+                    return reactionColors.friendly, "own_pet"
                 end
-            end
-        end
-        
-        -- Check mouseover
-        if UnitExists("mouseover") and playerName == UnitName("mouseover") then
-            if UnitIsUnit("mouseover", "pet") then
-                return reactionColors.friendly, "own_pet"
-            end
-            local reaction = UnitReaction("mouseover", "player")
-            if reaction then
-                if reaction <= 2 then
-                    return reactionColors.hostile, "hostile"
-                elseif reaction == 4 then
-                    return reactionColors.neutral, "neutral"
-                elseif reaction >= 5 then
-                    return reactionColors.friendly, "friendly"
+                local reaction = UnitReaction(checkUnit, "player")
+                if reaction then
+                    if reaction <= 2 then
+                        return reactionColors.hostile, "hostile"
+                    elseif reaction == 4 then
+                        return reactionColors.neutral, "neutral"
+                    elseif reaction >= 5 then
+                        return reactionColors.friendly, "friendly"
+                    end
                 end
+                break
             end
-        end
-        
-        -- Check pet specifically
-        if UnitExists("pet") and playerName == UnitName("pet") then
-            return reactionColors.friendly, "own_pet"
         end
     end
     
-    -- Ultimate fallback - neutral yellow for unknown units
-    return reactionColors.neutral, "fallback"
+    -- Ultimate fallback - hostile red for unknown units
+    return reactionColors.hostile, "fallback"
+end
+
+-- Get nameplate color based on system
+function ColorManager:GetNameplateColor(frame, playerName, unit)
+    if not frame then
+        return nil, nil
+    end
+    
+    local coloringSystem = NotPlater.db.profile.healthBar.coloring.system
+    
+    if coloringSystem == "class" then
+        return self:GetClassColorFromAllSources(frame, playerName, unit)
+    else
+        return self:GetReactionColor(frame, unit)
+    end
 end
 
 -- Apply color to nameplate
@@ -526,10 +483,11 @@ function ColorManager:ApplyNameplateColor(frame, color, colorType)
     frame.currentColor = color
     frame.currentColorType = colorType
     
-    -- Also store as unitClass for compatibility with existing code
+    -- Also store as unitClass for compatibility
     if colorType and (colorType == "party_raid" or colorType == "guild" or 
                       colorType == "recently_seen" or colorType == "direct" or
-                      colorType == "target" or colorType == "mouseover") then
+                      colorType == "target" or colorType == "mouseover" or
+                      colorType == "cache") then
         frame.unitClass = color
         frame.unitClassFromCache = true
     end
@@ -541,10 +499,11 @@ end
 function ColorManager:UpdateNameplateAppearance(frame)
     if not frame then return end
     
-    -- Get player name and unit from nameplate
+    -- Get player name from nameplate
     local nameText = select(7, frame:GetRegions())
     local playerName = nameText and nameText:GetText()
-    local unit = frame.unit -- Some frames may have unit stored
+    
+    if not playerName then return end
     
     -- Check if nameplate should be shown based on filters
     if not self:ShouldShowNameplate(frame, playerName) then
@@ -552,12 +511,15 @@ function ColorManager:UpdateNameplateAppearance(frame)
         return
     end
     
-    -- Try to find unit if not already set
-    if not unit and playerName then
-        unit = self:FindUnitForNameplate(frame, playerName)
-        -- Store the found unit on the frame for future reference
-        if unit then
-            frame.unit = unit
+    -- Find a unit for this nameplate
+    local unit = nil
+    if frame.unit then
+        unit = frame.unit
+    else
+        local units = self:FindAllUnitsForName(playerName)
+        if #units > 0 then
+            unit = units[1]
+            frame.unit = unit -- Store for future reference
         end
     end
     
@@ -565,11 +527,6 @@ function ColorManager:UpdateNameplateAppearance(frame)
     local color, colorType = self:GetNameplateColor(frame, playerName, unit)
     if color then
         self:ApplyNameplateColor(frame, color, colorType)
-    end
-    
-    -- Update threat icon if enabled
-    if NotPlater.UpdateThreatIcon then
-        NotPlater:UpdateThreatIcon(frame)
     end
 end
 
@@ -596,8 +553,8 @@ function ColorManager:ClassCheck(frame)
     local playerName = nameText:GetText()
     if not playerName then return false end
     
-    -- Check if we already processed this name and have a class
-    if frame.lastCheckedName == playerName and frame.unitClass then
+    -- Check if we already have a class color
+    if frame.unitClass and frame.lastCheckedName == playerName then
         return true
     end
     
@@ -612,7 +569,8 @@ function ColorManager:ClassCheck(frame)
     
     if color and (colorType == "party_raid" or colorType == "guild" or 
                   colorType == "recently_seen" or colorType == "direct" or
-                  colorType == "target" or colorType == "mouseover") then
+                  colorType == "target" or colorType == "mouseover" or
+                  colorType == "cache") then
         -- Apply the class color
         if frame.healthBar then
             frame.healthBar:SetStatusBarColor(color.r, color.g, color.b, 1)
@@ -627,4 +585,10 @@ function ColorManager:ClassCheck(frame)
     end
     
     return false
+end
+
+-- Clear all persistent cache
+function ColorManager:ClearPersistentCache()
+    persistentColorCache = {}
+    self:SavePersistentCache()
 end

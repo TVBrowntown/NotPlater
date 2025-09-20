@@ -9,6 +9,34 @@ local drawLayers = {["BACKGROUND"] = L["Background"], ["BORDER"] = L["Border"], 
 local ConfigPrototypes = {}
 NotPlater.ConfigPrototypes = ConfigPrototypes
 
+-- Safe accessor functions with nil checking
+local function SafeGet(info)
+    local profile = NotPlater.db and NotPlater.db.profile
+    if not profile then return nil end
+    
+    local current = profile
+    for i = 1, #info do
+        if current == nil then return nil end
+        current = current[info[i]]
+    end
+    return current
+end
+
+local function SafeSet(info, value)
+    local profile = NotPlater.db and NotPlater.db.profile
+    if not profile then return end
+    
+    local current = profile
+    for i = 1, #info - 1 do
+        if current[info[i]] == nil then
+            current[info[i]] = {}
+        end
+        current = current[info[i]]
+    end
+    current[info[#info]] = value
+    NotPlater:Reload()
+end
+
 -- Return all registered SML textures
 local function GetTextures()
     local textures = {}
@@ -408,9 +436,9 @@ function ConfigPrototypes:LoadConfigPrototypes()
         min = 1, max = 40, step = 1,
     }
     
-    -- Health Bar with new coloring system
+    -- Health Bar with FIXED coloring system
     ConfigPrototypes.HealthBar = ConfigPrototypes:GetGeneralisedStatusBarConfig()
-    -- Add coloring system
+    -- Add coloring system with proper get/set functions
     ConfigPrototypes.HealthBar.coloring = {
         order = 1.5,
         type = "group",
@@ -427,13 +455,20 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     ["class"] = L["Class Colors"],
                 },
                 width = "full",
+                get = function(info)
+                    return SafeGet({"healthBar", "coloring", "system"}) or "reaction"
+                end,
+                set = function(info, val)
+                    SafeSet({"healthBar", "coloring", "system"}, val)
+                end,
             },
             reactionColorsHeader = {
                 order = 1,
                 type = "header",
                 name = L["Reaction Colors"],
                 hidden = function() 
-                    return NotPlater.db.profile.healthBar.coloring.system ~= "reaction" 
+                    local system = SafeGet({"healthBar", "coloring", "system"})
+                    return system and system ~= "reaction"
                 end,
             },
             hostile = {
@@ -443,16 +478,18 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Color for hostile units"],
                 hasAlpha = true,
                 hidden = function() 
-                    return NotPlater.db.profile.healthBar.coloring.system ~= "reaction" 
+                    local system = SafeGet({"healthBar", "coloring", "system"})
+                    return system and system ~= "reaction"
                 end,
                 get = function(info)
-                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.hostile
-                    return color.r, color.g, color.b, color.a
+                    local color = SafeGet({"healthBar", "coloring", "reactionColors", "hostile"})
+                    if color then
+                        return color.r or 1, color.g or 0, color.b or 0, color.a or 1
+                    end
+                    return 1, 0, 0, 1  -- Default red
                 end,
                 set = function(info, r, g, b, a)
-                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.hostile
-                    color.r, color.g, color.b, color.a = r, g, b, a
-                    NotPlater:Reload()
+                    SafeSet({"healthBar", "coloring", "reactionColors", "hostile"}, {r = r, g = g, b = b, a = a})
                 end,
             },
             neutral = {
@@ -462,16 +499,18 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Color for neutral units"],
                 hasAlpha = true,
                 hidden = function() 
-                    return NotPlater.db.profile.healthBar.coloring.system ~= "reaction" 
+                    local system = SafeGet({"healthBar", "coloring", "system"})
+                    return system and system ~= "reaction"
                 end,
                 get = function(info)
-                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.neutral
-                    return color.r, color.g, color.b, color.a
+                    local color = SafeGet({"healthBar", "coloring", "reactionColors", "neutral"})
+                    if color then
+                        return color.r or 1, color.g or 1, color.b or 0, color.a or 1
+                    end
+                    return 1, 1, 0, 1  -- Default yellow
                 end,
                 set = function(info, r, g, b, a)
-                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.neutral
-                    color.r, color.g, color.b, color.a = r, g, b, a
-                    NotPlater:Reload()
+                    SafeSet({"healthBar", "coloring", "reactionColors", "neutral"}, {r = r, g = g, b = b, a = a})
                 end,
             },
             friendly = {
@@ -481,16 +520,18 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Color for friendly units"],
                 hasAlpha = true,
                 hidden = function() 
-                    return NotPlater.db.profile.healthBar.coloring.system ~= "reaction" 
+                    local system = SafeGet({"healthBar", "coloring", "system"})
+                    return system and system ~= "reaction"
                 end,
                 get = function(info)
-                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.friendly
-                    return color.r, color.g, color.b, color.a
+                    local color = SafeGet({"healthBar", "coloring", "reactionColors", "friendly"})
+                    if color then
+                        return color.r or 0, color.g or 1, color.b or 0, color.a or 1
+                    end
+                    return 0, 1, 0, 1  -- Default green
                 end,
                 set = function(info, r, g, b, a)
-                    local color = NotPlater.db.profile.healthBar.coloring.reactionColors.friendly
-                    color.r, color.g, color.b, color.a = r, g, b, a
-                    NotPlater:Reload()
+                    SafeSet({"healthBar", "coloring", "reactionColors", "friendly"}, {r = r, g = g, b = b, a = a})
                 end,
             },
             classColorsHeader = {
@@ -498,7 +539,8 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 type = "header",
                 name = L["Class Colors"],
                 hidden = function() 
-                    return NotPlater.db.profile.healthBar.coloring.system ~= "class" 
+                    local system = SafeGet({"healthBar", "coloring", "system"})
+                    return system and system ~= "class"
                 end,
             },
             classColorsEnable = {
@@ -508,14 +550,14 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Apply class colors to nameplates"],
                 width = "full",
                 hidden = function() 
-                    return NotPlater.db.profile.healthBar.coloring.system ~= "class" 
+                    local system = SafeGet({"healthBar", "coloring", "system"})
+                    return system and system ~= "class"
                 end,
                 get = function(info)
-                    return NotPlater.db.profile.healthBar.coloring.classColors.enable
+                    return SafeGet({"healthBar", "coloring", "classColors", "enable"}) or true
                 end,
                 set = function(info, val)
-                    NotPlater.db.profile.healthBar.coloring.classColors.enable = val
-                    NotPlater:Reload()
+                    SafeSet({"healthBar", "coloring", "classColors", "enable"}, val)
                 end,
             },
             playersOnly = {
@@ -525,17 +567,17 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["When enabled, class colors will only be applied to player characters, not NPCs"],
                 width = "full",
                 hidden = function() 
-                    return NotPlater.db.profile.healthBar.coloring.system ~= "class" 
+                    local system = SafeGet({"healthBar", "coloring", "system"})
+                    return system and system ~= "class"
                 end,
                 disabled = function() 
-                    return not NotPlater.db.profile.healthBar.coloring.classColors.enable
+                    return not (SafeGet({"healthBar", "coloring", "classColors", "enable"}) or true)
                 end,
                 get = function(info)
-                    return NotPlater.db.profile.healthBar.coloring.classColors.playersOnly
+                    return SafeGet({"healthBar", "coloring", "classColors", "playersOnly"}) or true
                 end,
                 set = function(info, val)
-                    NotPlater.db.profile.healthBar.coloring.classColors.playersOnly = val
-                    NotPlater:Reload()
+                    SafeSet({"healthBar", "coloring", "classColors", "playersOnly"}, val)
                 end,
             },
         }
@@ -555,11 +597,10 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Display nameplates for other players' totems"],
                 width = "full",
                 get = function(info)
-                    return NotPlater.db.profile.healthBar.unitFilters.showPlayerTotems
+                    return SafeGet({"healthBar", "unitFilters", "showPlayerTotems"}) or true
                 end,
                 set = function(info, val)
-                    NotPlater.db.profile.healthBar.unitFilters.showPlayerTotems = val
-                    NotPlater:Reload()
+                    SafeSet({"healthBar", "unitFilters", "showPlayerTotems"}, val)
                 end,
             },
             showOwnTotems = {
@@ -569,11 +610,10 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Display nameplates for your own totems"],
                 width = "full",
                 get = function(info)
-                    return NotPlater.db.profile.healthBar.unitFilters.showOwnTotems
+                    return SafeGet({"healthBar", "unitFilters", "showOwnTotems"}) or true
                 end,
                 set = function(info, val)
-                    NotPlater.db.profile.healthBar.unitFilters.showOwnTotems = val
-                    NotPlater:Reload()
+                    SafeSet({"healthBar", "unitFilters", "showOwnTotems"}, val)
                 end,
             },
             showOwnPet = {
@@ -583,11 +623,10 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Display nameplates for your own pet or minion"],
                 width = "full",
                 get = function(info)
-                    return NotPlater.db.profile.healthBar.unitFilters.showOwnPet
+                    return SafeGet({"healthBar", "unitFilters", "showOwnPet"}) or true
                 end,
                 set = function(info, val)
-                    NotPlater.db.profile.healthBar.unitFilters.showOwnPet = val
-                    NotPlater:Reload()
+                    SafeSet({"healthBar", "unitFilters", "showOwnPet"}, val)
                 end,
             },
             showOtherPlayerPets = {
@@ -597,11 +636,10 @@ function ConfigPrototypes:LoadConfigPrototypes()
                 desc = L["Display nameplates for other players' pets and minions"],
                 width = "full",
                 get = function(info)
-                    return NotPlater.db.profile.healthBar.unitFilters.showOtherPlayerPets
+                    return SafeGet({"healthBar", "unitFilters", "showOtherPlayerPets"}) or true
                 end,
                 set = function(info, val)
-                    NotPlater.db.profile.healthBar.unitFilters.showOtherPlayerPets = val
-                    NotPlater:Reload()
+                    SafeSet({"healthBar", "unitFilters", "showOtherPlayerPets"}, val)
                 end,
             },
         }
@@ -726,7 +764,9 @@ function ConfigPrototypes:LoadConfigPrototypes()
                             order = 2,
                             type = "select",
                             name = L["Texture"],
-                            values = NotPlater.targetHighlights,
+                            values = function()
+                                return NotPlater.targetHighlights or {}
+                            end,
                         },
                         thickness = {
                             order = 3,
@@ -865,7 +905,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     desc = L["Enable guild member caching and class color enhancement"],
                     width = "full",
                     set = function(info, val)
-                        NotPlater.db.profile.guildCache.general.enable = val
+                        SafeSet({"guildCache", "general", "enable"}, val)
                         if val and NotPlater.GuildCache then
                             -- Re-initialize if enabled
                             NotPlater.GuildCache:Initialize()
@@ -876,7 +916,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                         NotPlater:Reload()
                     end,
                     get = function(info)
-                        return NotPlater.db.profile.guildCache.general.enable
+                        return SafeGet({"guildCache", "general", "enable"}) or true
                     end,
                 },
                 useGuildClassColors = {
@@ -886,7 +926,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     desc = L["Apply class colors to guild member nameplates immediately"],
                     width = "full",
                     disabled = function() 
-                        return not NotPlater.db.profile.guildCache.general.enable 
+                        return not (SafeGet({"guildCache", "general", "enable"}) or true)
                     end,
                 },
                 showCacheMessages = {
@@ -895,7 +935,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     name = L["Show Cache Messages"],
                     desc = L["Display chat messages when guild roster is updated"],
                     disabled = function() 
-                        return not NotPlater.db.profile.guildCache.general.enable 
+                        return not (SafeGet({"guildCache", "general", "enable"}) or true)
                     end,
                 },
             },
@@ -915,11 +955,8 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     order = 1,
                     type = "description",
                     name = function()
-                        if NotPlater.GuildCache then
-                            local count = 0
-                            if type(NotPlater.GuildCache.GetMemberCount) == "function" then
-                                count = NotPlater.GuildCache:GetMemberCount()
-                            end
+                        if NotPlater.GuildCache and NotPlater.GuildCache.GetMemberCount then
+                            local count = NotPlater.GuildCache:GetMemberCount() or 0
                             return string.format(L["Cached Members: %d"], count)
                         else
                             return L["Guild cache not initialized"]
@@ -984,7 +1021,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                         end
                         
                         -- Sort members by name
-                        table.sort(members, function(a, b) return a.name < b.name end)
+                        table.sort(members, function(a, b) return (a.name or "") < (b.name or "") end)
                         
                         local lines = {}
                         for i, member in ipairs(members) do
@@ -992,15 +1029,15 @@ function ConfigPrototypes:LoadConfigPrototypes()
                             local colorCode = ""
                             if classColor then
                                 -- Convert RGB to hex color code
-                                local r = math.floor(classColor.r * 255)
-                                local g = math.floor(classColor.g * 255)
-                                local b = math.floor(classColor.b * 255)
+                                local r = math.floor((classColor.r or 1) * 255)
+                                local g = math.floor((classColor.g or 1) * 255)
+                                local b = math.floor((classColor.b or 1) * 255)
                                 colorCode = string.format("|cff%02x%02x%02x", r, g, b)
                             end
                             
                             local line = string.format("%s%s|r - Level %d %s%s|r (%s)", 
                                 colorCode, 
-                                member.name, 
+                                member.name or "Unknown", 
                                 member.level or 0,
                                 colorCode,
                                 member.class or "Unknown",
@@ -1034,7 +1071,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                         if NotPlater.GuildCache and NotPlater.GuildCache.RequestGuildRoster then
                             local oldCount = 0
                             if NotPlater.GuildCache.GetMemberCount then
-                                oldCount = NotPlater.GuildCache:GetMemberCount()
+                                oldCount = NotPlater.GuildCache:GetMemberCount() or 0
                             end
                             
                             NotPlater.GuildCache:RequestGuildRoster()
@@ -1057,7 +1094,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                         end
                     end,
                     disabled = function() 
-                        return not NotPlater.db.profile.guildCache.general.enable or not IsInGuild()
+                        return not (SafeGet({"guildCache", "general", "enable"}) or true) or not IsInGuild()
                     end,
                 },
             },
@@ -1076,13 +1113,14 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     min = 1,
                     max = 10,
                     step = 1,
-                    get = function(info) return NotPlater.db.profile.guildCache.advanced.updateThrottle end,
+                    get = function(info) 
+                        return SafeGet({"guildCache", "advanced", "updateThrottle"}) or 2
+                    end,
                     set = function(info, val) 
-                        NotPlater.db.profile.guildCache.advanced.updateThrottle = val
-                        NotPlater:Reload()
+                        SafeSet({"guildCache", "advanced", "updateThrottle"}, val)
                     end,
                     disabled = function() 
-                        return not NotPlater.db.profile.guildCache.general.enable 
+                        return not (SafeGet({"guildCache", "general", "enable"}) or true)
                     end,
                 },
                 debugMode = {
@@ -1090,10 +1128,14 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     type = "toggle",
                     name = L["Debug Mode"],
                     desc = L["Enable debug messages for guild cache operations"],
-                    get = function(info) return NotPlater.db.profile.guildCache.advanced.debugMode end,
-                    set = function(info, val) NotPlater.db.profile.guildCache.advanced.debugMode = val end,
+                    get = function(info) 
+                        return SafeGet({"guildCache", "advanced", "debugMode"}) or false
+                    end,
+                    set = function(info, val) 
+                        SafeSet({"guildCache", "advanced", "debugMode"}, val)
+                    end,
                     disabled = function() 
-                        return not NotPlater.db.profile.guildCache.general.enable 
+                        return not (SafeGet({"guildCache", "general", "enable"}) or true)
                     end,
                 },
             },
@@ -1113,7 +1155,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     desc = L["Enable party and raid member caching for class colors"],
                     width = "full",
                     set = function(info, val)
-                        NotPlater.db.profile.partyRaidCache.general.enable = val
+                        SafeSet({"partyRaidCache", "general", "enable"}, val)
                         if val and NotPlater.PartyRaidCache then
                             NotPlater.PartyRaidCache:Initialize()
                         elseif not val and NotPlater.PartyRaidCache then
@@ -1122,7 +1164,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                         NotPlater:Reload()
                     end,
                     get = function(info)
-                        return NotPlater.db.profile.partyRaidCache.general.enable
+                        return SafeGet({"partyRaidCache", "general", "enable"}) or true
                     end,
                 },
                 usePartyRaidColors = {
@@ -1132,7 +1174,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     desc = L["Apply class colors to party and raid member nameplates"],
                     width = "full",
                     disabled = function() 
-                        return not NotPlater.db.profile.partyRaidCache.general.enable 
+                        return not (SafeGet({"partyRaidCache", "general", "enable"}) or true)
                     end,
                 },
                 showCacheMessages = {
@@ -1141,7 +1183,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     name = L["Show Cache Messages"],
                     desc = L["Display chat messages when party/raid roster is updated"],
                     disabled = function() 
-                        return not NotPlater.db.profile.partyRaidCache.general.enable 
+                        return not (SafeGet({"partyRaidCache", "general", "enable"}) or true)
                     end,
                 },
             },
@@ -1161,8 +1203,8 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     order = 1,
                     type = "description",
                     name = function()
-                        if NotPlater.PartyRaidCache then
-                            local count = NotPlater.PartyRaidCache:GetMemberCount()
+                        if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.GetMemberCount then
+                            local count = NotPlater.PartyRaidCache:GetMemberCount() or 0
                             return string.format(L["Cached Members: %d"], count)
                         else
                             return L["Party/Raid cache not initialized"]
@@ -1174,7 +1216,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     order = 2,
                     type = "description",
                     name = function()
-                        if NotPlater.PartyRaidCache then
+                        if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.GetGroupType then
                             local groupType = NotPlater.PartyRaidCache:GetGroupType()
                             if groupType == "raid" then
                                 return L["Currently in a Raid"]
@@ -1230,22 +1272,22 @@ function ConfigPrototypes:LoadConfigPrototypes()
                         end
                         
                         -- Sort members by name
-                        table.sort(members, function(a, b) return a.name < b.name end)
+                        table.sort(members, function(a, b) return (a.name or "") < (b.name or "") end)
                         
                         local lines = {}
                         for i, member in ipairs(members) do
                             local classColor = member.classColor
                             local colorCode = ""
                             if classColor then
-                                local r = math.floor(classColor.r * 255)
-                                local g = math.floor(classColor.g * 255)
-                                local b = math.floor(classColor.b * 255)
+                                local r = math.floor((classColor.r or 1) * 255)
+                                local g = math.floor((classColor.g or 1) * 255)
+                                local b = math.floor((classColor.b or 1) * 255)
                                 colorCode = string.format("|cff%02x%02x%02x", r, g, b)
                             end
                             
                             local line = string.format("%s%s|r - Level %d %s%s|r (%s)", 
                                 colorCode, 
-                                member.name, 
+                                member.name or "Unknown", 
                                 member.level or 0,
                                 colorCode,
                                 member.class or "Unknown",
@@ -1282,7 +1324,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                         end
                     end,
                     disabled = function() 
-                        return not NotPlater.db.profile.partyRaidCache.general.enable or 
+                        return not (SafeGet({"partyRaidCache", "general", "enable"}) or true) or 
                                (not UnitInParty("player") and not UnitInRaid("player"))
                     end,
                 },
@@ -1299,10 +1341,14 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     type = "toggle",
                     name = L["Debug Mode"],
                     desc = L["Enable debug messages for party/raid cache operations"],
-                    get = function(info) return NotPlater.db.profile.partyRaidCache.advanced.debugMode end,
-                    set = function(info, val) NotPlater.db.profile.partyRaidCache.advanced.debugMode = val end,
+                    get = function(info) 
+                        return SafeGet({"partyRaidCache", "advanced", "debugMode"}) or false
+                    end,
+                    set = function(info, val) 
+                        SafeSet({"partyRaidCache", "advanced", "debugMode"}, val)
+                    end,
                     disabled = function() 
-                        return not NotPlater.db.profile.partyRaidCache.general.enable 
+                        return not (SafeGet({"partyRaidCache", "general", "enable"}) or true)
                     end,
                 },
             },
@@ -1322,11 +1368,11 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     desc = L["Cache players you've seen recently for faster class color detection"],
                     width = "full",
                     set = function(info, val)
-                        NotPlater.db.profile.recentlySeenCache.general.enable = val
+                        SafeSet({"recentlySeenCache", "general", "enable"}, val)
                         NotPlater:Reload()
                     end,
                     get = function(info)
-                        return NotPlater.db.profile.recentlySeenCache.general.enable
+                        return SafeGet({"recentlySeenCache", "general", "enable"}) or true
                     end,
                 },
                 useRecentlySeenColors = {
@@ -1336,7 +1382,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     desc = L["Apply class colors to recently seen players"],
                     width = "full",
                     disabled = function() 
-                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                        return not (SafeGet({"recentlySeenCache", "general", "enable"}) or true)
                     end,
                 },
                 pruneDays = {
@@ -1351,7 +1397,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                         [9] = L["9 days"],
                     },
                     disabled = function() 
-                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                        return not (SafeGet({"recentlySeenCache", "general", "enable"}) or true)
                     end,
                 },
                 maxEntries = {
@@ -1363,7 +1409,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     max = 1000,
                     step = 50,
                     disabled = function() 
-                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                        return not (SafeGet({"recentlySeenCache", "general", "enable"}) or true)
                     end,
                 },
                 showCacheMessages = {
@@ -1372,7 +1418,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     name = L["Show Cache Messages"],
                     desc = L["Display messages when the cache is updated"],
                     disabled = function() 
-                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                        return not (SafeGet({"recentlySeenCache", "general", "enable"}) or true)
                     end,
                 },
             },
@@ -1394,7 +1440,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     name = function()
                         if NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.GetStatistics then
                             local stats = NotPlater.RecentlySeenCache:GetStatistics()
-                            return string.format(L["Cached Players: %d"], stats.size)
+                            return string.format(L["Cached Players: %d"], stats.size or 0)
                         else
                             return L["Recently Seen cache not initialized"]
                         end
@@ -1407,7 +1453,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     name = function()
                         if NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.GetStatistics then
                             local stats = NotPlater.RecentlySeenCache:GetStatistics()
-                            return string.format(L["Cache Hit Rate: %.1f%%"], stats.hitRate)
+                            return string.format(L["Cache Hit Rate: %.1f%%"], stats.hitRate or 0)
                         else
                             return L["No statistics available"]
                         end
@@ -1421,7 +1467,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                         if NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.GetStatistics then
                             local stats = NotPlater.RecentlySeenCache:GetStatistics()
                             return string.format(L["Hits: %d | Misses: %d | Added: %d | Pruned: %d"], 
-                                stats.hits, stats.misses, stats.added, stats.pruned)
+                                stats.hits or 0, stats.misses or 0, stats.added or 0, stats.pruned or 0)
                         else
                             return ""
                         end
@@ -1457,14 +1503,14 @@ function ConfigPrototypes:LoadConfigPrototypes()
                             local classColor = player.classColor
                             local colorCode = ""
                             if classColor then
-                                local r = math.floor(classColor.r * 255)
-                                local g = math.floor(classColor.g * 255)
-                                local b = math.floor(classColor.b * 255)
+                                local r = math.floor((classColor.r or 1) * 255)
+                                local g = math.floor((classColor.g or 1) * 255)
+                                local b = math.floor((classColor.b or 1) * 255)
                                 colorCode = string.format("|cff%02x%02x%02x", r, g, b)
                             end
                             
                             -- Calculate time ago
-                            local timeAgo = currentTime - player.lastSeen
+                            local timeAgo = currentTime - (player.lastSeen or 0)
                             local timeString = ""
                             if timeAgo < 60 then
                                 timeString = "< 1 min ago"
@@ -1478,7 +1524,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                             
                             local line = string.format("%s%s|r - Level %d %s%s|r (%s)", 
                                 colorCode, 
-                                player.name, 
+                                player.name or "Unknown", 
                                 player.level or 0,
                                 colorCode,
                                 player.class or "Unknown",
@@ -1517,7 +1563,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     confirm = true,
                     confirmText = L["Are you sure you want to clear the recently seen cache?"],
                     disabled = function() 
-                        return not NotPlater.db.profile.recentlySeenCache.general.enable
+                        return not (SafeGet({"recentlySeenCache", "general", "enable"}) or true)
                     end,
                 },
             },
@@ -1533,10 +1579,14 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     type = "toggle",
                     name = L["Debug Mode"],
                     desc = L["Enable debug messages for recently seen cache operations"],
-                    get = function(info) return NotPlater.db.profile.recentlySeenCache.advanced.debugMode end,
-                    set = function(info, val) NotPlater.db.profile.recentlySeenCache.advanced.debugMode = val end,
+                    get = function(info) 
+                        return SafeGet({"recentlySeenCache", "advanced", "debugMode"}) or false
+                    end,
+                    set = function(info, val) 
+                        SafeSet({"recentlySeenCache", "advanced", "debugMode"}, val)
+                    end,
                     disabled = function() 
-                        return not NotPlater.db.profile.recentlySeenCache.general.enable 
+                        return not (SafeGet({"recentlySeenCache", "general", "enable"}) or true)
                     end,
                 },
             },

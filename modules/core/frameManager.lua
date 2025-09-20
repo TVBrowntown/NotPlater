@@ -1,5 +1,5 @@
 -- modules/core/frameManager.lua
--- Centralized frame management and lifecycle
+-- Simplified and fixed frame management and lifecycle
 
 if not NotPlater then return end
 
@@ -25,8 +25,10 @@ function FrameManager:SetupUpdateFrame()
     
     local updateThrottle = 0
     local cleanupTimer = 0
+    local colorUpdateTimer = 0
     local UPDATE_INTERVAL = 0.1
     local CLEANUP_INTERVAL = 30
+    local COLOR_UPDATE_INTERVAL = 2
     
     NotPlater.frame:SetScript("OnUpdate", function(self, elapsed)
         updateThrottle = updateThrottle + elapsed
@@ -44,6 +46,13 @@ function FrameManager:SetupUpdateFrame()
         if cleanupTimer >= CLEANUP_INTERVAL then
             FrameManager:CleanupDeadFrames()
             cleanupTimer = 0
+        end
+        
+        -- Periodic color updates for all frames
+        colorUpdateTimer = colorUpdateTimer + elapsed
+        if colorUpdateTimer >= COLOR_UPDATE_INTERVAL then
+            FrameManager:UpdateAllFrameColors()
+            colorUpdateTimer = 0
         end
     end)
 end
@@ -115,19 +124,8 @@ function FrameManager:OnNameplateShow(frame)
         NotPlater.ColorManager:ClearFrameColorCache(frame)
     end
     
-    -- Get nameplate info
-    local nameText = select(7, frame:GetRegions())
-    local playerName = nameText and nameText:GetText()
-    
-    -- Immediate cache check for colors
-    if playerName and NotPlater.CacheManager then
-        NotPlater.CacheManager:CheckAllCaches(frame, playerName)
-    end
-    
-    -- Update visual appearance using ColorManager
-    if NotPlater.ColorManager then
-        NotPlater.ColorManager:UpdateNameplateAppearance(frame)
-    end
+    -- Immediate color application
+    self:ApplyInitialColor(frame)
     
     -- Show cast bar if needed
     if NotPlater.CastBarOnShow then
@@ -145,6 +143,32 @@ function FrameManager:OnNameplateShow(frame)
     end
     
     frame.targetChanged = true
+    frame.needsColorUpdate = true
+end
+
+-- Apply initial color when nameplate shows
+function FrameManager:ApplyInitialColor(frame)
+    if not frame or not NotPlater.ColorManager then return end
+    
+    -- Get nameplate info
+    local nameText = select(7, frame:GetRegions())
+    local playerName = nameText and nameText:GetText()
+    
+    if playerName then
+        -- Try to get color from any source
+        local color, colorType = NotPlater.ColorManager:GetNameplateColor(frame, playerName, nil)
+        if color then
+            NotPlater.ColorManager:ApplyNameplateColor(frame, color, colorType)
+        else
+            -- Apply default reaction color immediately
+            local reactionColors = NotPlater.db.profile.healthBar.coloring.reactionColors
+            local defaultColor = reactionColors.hostile -- Default to hostile red
+            
+            if frame.healthBar then
+                frame.healthBar:SetStatusBarColor(defaultColor.r, defaultColor.g, defaultColor.b, defaultColor.a or 1)
+            end
+        end
+    end
 end
 
 -- Handle nameplate hide event
@@ -158,6 +182,7 @@ function FrameManager:OnNameplateHide(frame)
     frame.unit = nil
     frame.unitGUID = nil
     frame.wasTarget = nil
+    frame.needsColorUpdate = nil
     
     -- Hide cast bar
     if frame.castBar then
@@ -181,6 +206,7 @@ function FrameManager:OnNameplateUpdate(frame)
     if frame.wasTarget ~= isTarget then
         frame.targetChanged = true
         frame.wasTarget = isTarget
+        frame.needsColorUpdate = true
     end
     
     -- Handle target changes
@@ -194,39 +220,15 @@ function FrameManager:OnNameplateUpdate(frame)
     -- Update threat icon if enabled
     if NotPlater.db.profile.threatIcon and NotPlater.db.profile.threatIcon.general.enable then
         if NotPlater.UpdateThreatIcon then
-            -- Try to find unit for threat calculation
-            local nameText, levelText = select(7, frame:GetRegions())
-            if nameText and levelText then
-                local name = nameText:GetText()
-                local level = levelText:GetText()
-                
-                if name and level then
-                    -- Check common unit IDs
-                    if UnitExists("target") and name == UnitName("target") and 
-                       level == tostring(UnitLevel("target")) then
-                        frame.unit = "target"
-                        frame.unitGUID = UnitGUID("target")
-                    elseif UnitExists("mouseover") and name == UnitName("mouseover") and 
-                           level == tostring(UnitLevel("mouseover")) then
-                        frame.unit = "mouseover"
-                        frame.unitGUID = UnitGUID("mouseover")
-                    end
-                end
-            end
-            
+            self:UpdateFrameUnitInfo(frame)
             NotPlater:UpdateThreatIcon(frame)
         end
     end
     
-    -- Update colors if needed using ColorManager
-    if not frame.unitClass and NotPlater.ColorManager then
-        local nameText = select(7, frame:GetRegions())
-        local playerName = nameText and nameText:GetText()
-        
-        if playerName then
-            -- Let ColorManager handle class checking
-            NotPlater.ColorManager:ClassCheck(frame)
-        end
+    -- Update colors if needed
+    if frame.needsColorUpdate then
+        self:UpdateFrameColor(frame)
+        frame.needsColorUpdate = nil
     end
     
     -- Update target text
@@ -240,10 +242,87 @@ function FrameManager:OnNameplateUpdate(frame)
     elseif NotPlater.db.profile.target.general.nonTargetAlpha.enable then
         frame:SetAlpha(NotPlater.db.profile.target.general.nonTargetAlpha.opacity)
     end
+end
+
+-- Update frame unit info for threat/other systems
+function FrameManager:UpdateFrameUnitInfo(frame)
+    if not frame then return end
     
-    -- Periodic color updates for non-cached frames
-    if not frame.unitClass and NotPlater.ColorManager then
-        NotPlater.ColorManager:UpdateNameplateAppearance(frame)
+    local nameText, levelText = select(7, frame:GetRegions())
+    if not nameText or not levelText then return end
+    
+    local name = nameText:GetText()
+    local level = levelText:GetText()
+    
+    if name and level then
+        -- Check common unit IDs
+        if UnitExists("target") and name == UnitName("target") and 
+           level == tostring(UnitLevel("target")) then
+            frame.unit = "target"
+            frame.unitGUID = UnitGUID("target")
+        elseif UnitExists("mouseover") and name == UnitName("mouseover") and 
+               level == tostring(UnitLevel("mouseover")) then
+            frame.unit = "mouseover"
+            frame.unitGUID = UnitGUID("mouseover")
+        elseif UnitExists("pet") and name == UnitName("pet") then
+            frame.unit = "pet"
+            frame.unitGUID = UnitGUID("pet")
+        end
+    end
+end
+
+-- Update single frame color
+function FrameManager:UpdateFrameColor(frame)
+    if not frame or not NotPlater.ColorManager then return end
+    
+    -- Get nameplate info
+    local nameText = select(7, frame:GetRegions())
+    local playerName = nameText and nameText:GetText()
+    
+    if playerName then
+        -- Update unit info
+        self:UpdateFrameUnitInfo(frame)
+        
+        -- Get color with comprehensive detection
+        local color, colorType = NotPlater.ColorManager:GetNameplateColor(frame, playerName, frame.unit)
+        
+        if color then
+            -- Apply the color
+            NotPlater.ColorManager:ApplyNameplateColor(frame, color, colorType)
+        end
+    end
+end
+
+-- Update all frame colors periodically
+function FrameManager:UpdateAllFrameColors()
+    if not NotPlater.ColorManager then return end
+    
+    for frame in pairs(managedFrames) do
+        if frame:IsShown() then
+            -- Only update if frame doesn't have a recent color or is target
+            local needsUpdate = false
+            
+            -- Always update target
+            if NotPlater:IsTarget(frame) then
+                needsUpdate = true
+            end
+            
+            -- Update if no color assigned
+            if not frame.currentColor then
+                needsUpdate = true
+            end
+            
+            -- Update if mouseover (for immediate feedback)
+            local nameText = select(7, frame:GetRegions())
+            local playerName = nameText and nameText:GetText()
+            if playerName and UnitExists("mouseover") and playerName == UnitName("mouseover") then
+                needsUpdate = true
+            end
+            
+            if needsUpdate then
+                self:UpdateFrameColor(frame)
+            end
+        end
     end
 end
 
@@ -287,13 +366,29 @@ end
 function FrameManager:UpdateAllFrames()
     for frame in pairs(managedFrames) do
         if frame:IsShown() then
-            -- Update colors using ColorManager
-            if NotPlater.ColorManager then
-                NotPlater.ColorManager:UpdateNameplateAppearance(frame)
-            end
+            -- Mark for color update
+            frame.needsColorUpdate = true
+            
+            -- Update immediately
+            self:UpdateFrameColor(frame)
             
             -- Update other components
             self:OnNameplateUpdate(frame)
+        end
+    end
+end
+
+-- Force color refresh for all frames
+function FrameManager:RefreshAllColors()
+    for frame in pairs(managedFrames) do
+        if frame:IsShown() then
+            -- Clear existing color data
+            if NotPlater.ColorManager then
+                NotPlater.ColorManager:ClearFrameColorCache(frame)
+            end
+            
+            -- Force immediate update
+            self:UpdateFrameColor(frame)
         end
     end
 end
