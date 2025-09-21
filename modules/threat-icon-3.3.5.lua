@@ -1,5 +1,5 @@
 -- modules/threat-icon-3.3.5.lua
--- Fixed version with persistent threat tracking
+-- Fixed version with proper GUID matching to prevent threat icons on wrong nameplates
 -- For WotLK 3.3.5
 
 if not NotPlater then return end
@@ -85,17 +85,17 @@ local function IsInRaid()
     return GetNumRaidMembers() > 0
 end
 
--- Try to find a unit ID for this nameplate
-function NotPlater:FindUnitForNameplate(frame)
-    if not frame then return nil end
+-- Try to find a unit ID for this nameplate AND verify it matches
+function NotPlater:FindAndVerifyUnitForNameplate(frame)
+    if not frame then return nil, nil end
     
     -- Get name and level from nameplate
     local nameText, levelText = select(7, frame:GetRegions())
-    if not nameText or not levelText then return nil end
+    if not nameText or not levelText then return nil, nil end
     
     local name = nameText:GetText()
     local level = levelText:GetText()
-    if not name or not level then return nil end
+    if not name or not level then return nil, nil end
     
     -- Check all possible unit IDs
     local unitsToCheck = {"target", "mouseover", "focus"}
@@ -116,16 +116,18 @@ function NotPlater:FindUnitForNameplate(frame)
         if UnitExists(unit) and 
            name == UnitName(unit) and 
            level == tostring(UnitLevel(unit)) then
-            -- Found a match - store the GUID
+            -- Found a match - get the GUID
             local guid = UnitGUID(unit)
             if guid then
+                -- Store the GUID on the frame
                 frame.unitGUID = guid
-                return unit
+                frame.unit = unit
+                return unit, guid
             end
         end
     end
     
-    return nil
+    return nil, nil
 end
 
 function NotPlater:UpdateThreatIcon(frame)
@@ -142,43 +144,36 @@ function NotPlater:UpdateThreatIcon(frame)
         return
     end
     
-    -- Try to find a unit ID for this nameplate
-    local unit = frame.unit or self:FindUnitForNameplate(frame)
+    -- Try to find and verify unit for this specific nameplate
+    local unit, guid = self:FindAndVerifyUnitForNameplate(frame)
     
-    -- If we found a unit, update the threat state cache
-    if unit and UnitExists(unit) then
-        frame.unit = unit
-        local guid = UnitGUID(unit)
-        if guid then
-            frame.unitGUID = guid
-            
-            -- Check threat and update cache
-            local isTanking, status = UnitDetailedThreatSituation("player", unit)
-            if isTanking or (status and status > 0) then
-                -- We have threat - cache it
-                threatStateCache[guid] = {
-                    isTanking = isTanking,
-                    status = status,
-                    timestamp = GetTime(),
-                    unitName = UnitName(unit)
-                }
-            elseif threatStateCache[guid] then
-                -- No threat anymore - clear from cache
-                threatStateCache[guid] = nil
-            end
-        end
-    end
-    
-    -- Check if we have cached threat for this nameplate's GUID
-    local hasCachedThreat = false
-    if frame.unitGUID and threatStateCache[frame.unitGUID] then
-        hasCachedThreat = true
-    end
-    
-    -- If no unit and no cached threat, hide the icon
-    if not unit and not hasCachedThreat then
+    -- CRITICAL: Only proceed if we found a unit AND its GUID matches this nameplate
+    if not unit or not guid then
+        -- No matching unit found - hide the icon
         frame.threatIcon:Hide()
         return
+    end
+    
+    -- CRITICAL: Verify the nameplate still represents this unit
+    -- This prevents showing threat icons on wrong nameplates
+    if frame.unitGUID and frame.unitGUID ~= guid then
+        -- GUID mismatch - this nameplate doesn't represent the unit we found
+        frame.threatIcon:Hide()
+        return
+    end
+    
+    -- Update the cache for this specific GUID
+    local isTanking, status = UnitDetailedThreatSituation("player", unit)
+    if isTanking or (status and status > 0) then
+        threatStateCache[guid] = {
+            isTanking = isTanking,
+            status = status,
+            timestamp = GetTime(),
+            unitName = UnitName(unit)
+        }
+    elseif threatStateCache[guid] then
+        -- No threat anymore - clear from cache
+        threatStateCache[guid] = nil
     end
     
     local threatIconConfig = self.db.profile.threatIcon
@@ -205,12 +200,10 @@ function NotPlater:UpdateThreatIcon(frame)
     end
     
     -- Check if this is an attackable NPC
-    if unit and UnitExists(unit) then
-        local isPlayerOrPet = UnitIsPlayer(unit) or IsUnitPlayerPet(unit)
-        if not (UnitCanAttack("player", unit) and not isPlayerOrPet) then
-            frame.threatIcon:Hide()
-            return
-        end
+    local isPlayerOrPet = UnitIsPlayer(unit) or IsUnitPlayerPet(unit)
+    if not (UnitCanAttack("player", unit) and not isPlayerOrPet) then
+        frame.threatIcon:Hide()
+        return
     end
     
     local mode = self.db.profile.threat.general.mode
@@ -219,23 +212,11 @@ function NotPlater:UpdateThreatIcon(frame)
     -- Store previous color for animation triggers
     frame.threatIcon.colorPrev = frame.threatIcon.color
     
-    -- Use cached threat if we don't have a unit
-    if not unit and frame.unitGUID and threatStateCache[frame.unitGUID] then
-        local cached = threatStateCache[frame.unitGUID]
-        if mode == "tank" then
-            self:UpdateTankThreatIconCached(frame, cached, icon)
-        else
-            self:UpdateDPSThreatIconCached(frame, cached, icon)
-        end
-    elseif unit then
-        if mode == "tank" then
-            self:UpdateTankThreatIcon(frame, unit, icon)
-        else
-            self:UpdateDPSThreatIcon(frame, unit, icon)
-        end
+    -- Update threat icon based on mode
+    if mode == "tank" then
+        self:UpdateTankThreatIcon(frame, unit, icon)
     else
-        frame.threatIcon:Hide()
-        return
+        self:UpdateDPSThreatIcon(frame, unit, icon)
     end
     
     -- Trigger animation on color change (simple fade-in for 3.3.5)
@@ -248,42 +229,6 @@ function NotPlater:UpdateThreatIcon(frame)
     local targetOpacity = threatIconConfig.general.opacity or 1
     if not frame.threatIcon.fadeIn then
         frame.threatIcon:SetAlpha(targetOpacity)
-    end
-end
-
--- Update functions using cached data
-function NotPlater:UpdateTankThreatIconCached(frame, cached, icon)
-    icon:SetTexture(THREAT_ICON_PATHS.tank)
-    
-    if cached.isTanking then
-        icon:SetVertexColor(THREAT_COLORS.green.r, THREAT_COLORS.green.g, THREAT_COLORS.green.b)
-        frame.threatIcon.color = "green"
-        frame.threatIcon:Show()
-    else
-        -- Lost aggro as tank - bad
-        icon:SetVertexColor(THREAT_COLORS.red.r, THREAT_COLORS.red.g, THREAT_COLORS.red.b)
-        frame.threatIcon.color = "red"
-        frame.threatIcon:Show()
-    end
-end
-
-function NotPlater:UpdateDPSThreatIconCached(frame, cached, icon)
-    icon:SetTexture(THREAT_ICON_PATHS.aggro)
-    
-    if cached.isTanking then
-        icon:SetVertexColor(THREAT_COLORS.red.r, THREAT_COLORS.red.g, THREAT_COLORS.red.b)
-        frame.threatIcon.color = "red"
-        frame.threatIcon:Show()
-    elseif cached.status and cached.status >= 2 then
-        icon:SetVertexColor(THREAT_COLORS.orange.r, THREAT_COLORS.orange.g, THREAT_COLORS.orange.b)
-        frame.threatIcon.color = "orange"
-        frame.threatIcon:Show()
-    elseif cached.status and cached.status >= 1 then
-        icon:SetVertexColor(THREAT_COLORS.yellow.r, THREAT_COLORS.yellow.g, THREAT_COLORS.yellow.b)
-        frame.threatIcon.color = "yellow"
-        frame.threatIcon:Show()
-    else
-        frame.threatIcon:Hide()
     end
 end
 
@@ -447,27 +392,6 @@ function NotPlater:ScaleThreatIcon(frame, isTarget)
             (config.size.width or 36) * scalingFactor, 
             (config.size.height or 36) * scalingFactor
         )
-    end
-end
-
--- Hook into the threat check system
-function NotPlater:ThreatIconCheck(frame)
-    -- Update threat icon whenever threat is checked
-    self:UpdateThreatIcon(frame)
-end
-
--- Add a periodic update for threat icons
-function NotPlater:ThreatIconOnUpdate(frame, elapsed)
-    if not frame.threatIconElapsed then
-        frame.threatIconElapsed = 0
-    end
-    
-    frame.threatIconElapsed = frame.threatIconElapsed + elapsed
-    
-    -- Update more frequently for better responsiveness
-    if frame.threatIconElapsed >= 0.5 then
-        frame.threatIconElapsed = 0
-        self:UpdateThreatIcon(frame)
     end
 end
 

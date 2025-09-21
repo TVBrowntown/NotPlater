@@ -4,6 +4,10 @@ local CreateFrame = CreateFrame
 local GetTime = GetTime
 local UnitCastingInfo = UnitCastingInfo
 local UnitChannelInfo = UnitChannelInfo
+local UnitGUID = UnitGUID
+local UnitExists = UnitExists
+local UnitName = UnitName
+local UnitLevel = UnitLevel
 local FAILED = FAILED
 local INTERRUPTED = INTERRUPTED
 local slen = string.len
@@ -18,11 +22,53 @@ function NotPlater:SetCastBarNameText(frame, text)
 	end
 end
 
+-- Verify that this nameplate represents the unit casting
+function NotPlater:VerifyNameplateForUnit(frame, unit)
+	if not frame or not unit or not UnitExists(unit) then
+		return false
+	end
+	
+	-- Get nameplate info
+	local nameText, levelText = select(7, frame:GetRegions())
+	if not nameText or not levelText then
+		return false
+	end
+	
+	local nameplateName = nameText:GetText()
+	local nameplateLevel = levelText:GetText()
+	
+	-- Check if nameplate matches unit
+	local unitName = UnitName(unit)
+	local unitLevel = tostring(UnitLevel(unit))
+	
+	if nameplateName ~= unitName or nameplateLevel ~= unitLevel then
+		return false
+	end
+	
+	-- Get and verify GUID
+	local unitGUID = UnitGUID(unit)
+	if not unitGUID then
+		return false
+	end
+	
+	-- Store GUID on frame if not already stored
+	if not frame.castingGUID then
+		frame.castingGUID = unitGUID
+	elseif frame.castingGUID ~= unitGUID then
+		-- GUID mismatch - this nameplate doesn't represent the casting unit
+		return false
+	end
+	
+	return true
+end
+
 function NotPlater:CastBarOnUpdate(elapsed)
-    local castBarConfig = NotPlater.db.profile.castBar
-    
-    -- Early exit if not target
-	if not NotPlater:IsTarget(self:GetParent()) then
+	local castBarConfig = NotPlater.db.profile.castBar
+	local frame = self:GetParent()
+	
+	-- Verify this cast bar is for the correct unit
+	local unit = frame.castBar.castingUnit
+	if unit and not NotPlater:VerifyNameplateForUnit(frame, unit) then
 		self.casting = nil
 		self.channeling = nil
 		self:Hide()
@@ -106,8 +152,20 @@ end
 function NotPlater:CastBarOnCast(frame, event, unit)
 	local castBarConfig = self.db.profile.castBar
 	if not castBarConfig.statusBar.general.enable then return end
+	
+	-- CRITICAL: Verify this nameplate represents the casting unit
+	if unit and not self:VerifyNameplateForUnit(frame, unit) then
+		frame.castBar:Hide()
+		frame.castBar.casting = nil
+		frame.castBar.channeling = nil
+		frame.castBar.castingUnit = nil
+		frame.castingGUID = nil
+		return
+	end
 
 	frame.castBar.lastUpdate = GetTime()
+	frame.castBar.castingUnit = unit -- Store the unit for later verification
+	
 	if unit then
 		if not event then
 			if UnitChannelInfo(unit) then
@@ -118,6 +176,8 @@ function NotPlater:CastBarOnCast(frame, event, unit)
 		end
 	elseif frame.castBar:IsShown() then
 		frame.castBar:Hide()
+		frame.castBar.castingUnit = nil
+		frame.castingGUID = nil
 	end
 
 	if event == "UNIT_SPELLCAST_START" then
@@ -155,6 +215,8 @@ function NotPlater:CastBarOnCast(frame, event, unit)
 			end
 
 			frame.castBar:Hide()
+			frame.castBar.castingUnit = nil
+			frame.castingGUID = nil
 		end
 	elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED" then
 		if frame.castBar:IsShown() then
@@ -167,6 +229,8 @@ function NotPlater:CastBarOnCast(frame, event, unit)
 			end
 			frame.castBar.casting = nil
 			frame.castBar.channeling = nil
+			frame.castBar.castingUnit = nil
+			frame.castingGUID = nil
 		end
 	elseif event == "UNIT_SPELLCAST_DELAYED" then
 		if frame:IsShown() then
@@ -226,11 +290,23 @@ function NotPlater:CastBarOnCast(frame, event, unit)
 end
 
 function NotPlater:CastCheck(frame)
-    -- Only show cast bar if this is actually the target
+    -- Only show cast bar if this is actually the target AND it matches this nameplate
     if not self:IsTarget(frame) then
         frame.castBar:Hide()
         frame.castBar.casting = nil
         frame.castBar.channeling = nil
+        frame.castBar.castingUnit = nil
+        frame.castingGUID = nil
+        return
+    end
+    
+    -- Verify the target nameplate matches the actual target unit
+    if not self:VerifyNameplateForUnit(frame, "target") then
+        frame.castBar:Hide()
+        frame.castBar.casting = nil
+        frame.castBar.channeling = nil
+        frame.castBar.castingUnit = nil
+        frame.castingGUID = nil
         return
     end
     
@@ -260,8 +336,11 @@ function NotPlater:CastBarOnShow(frame)
     local castFrame = frame.castBar
     castFrame.casting = nil
     castFrame.channeling = nil
-    -- Only check casts if this is the target
-    if NotPlater:IsTarget(frame) then
+    castFrame.castingUnit = nil
+    frame.castingGUID = nil
+    
+    -- Only check casts if this is the target AND matches this nameplate
+    if NotPlater:IsTarget(frame) and NotPlater:VerifyNameplateForUnit(frame, "target") then
         NotPlater:CastCheck(frame)
     else
         castFrame:Hide()
