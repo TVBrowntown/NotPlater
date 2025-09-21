@@ -1313,8 +1313,8 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     name = L["Maximum Cache Size"],
                     desc = L["Maximum number of players to keep in cache"],
                     min = 100,
-                    max = 1000,
-                    step = 50,
+                    max = 2000,
+                    step = 100,
                     disabled = function() 
                         return not NotPlater.db.profile.recentlySeenCache.general.enable 
                     end,

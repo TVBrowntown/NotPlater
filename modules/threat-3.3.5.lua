@@ -151,10 +151,38 @@ function NotPlater:OnNameplateMatch(healthFrame, group, ThreatLib)
 	
 	-- Cache threat values to avoid repeated calls
 	local unit = healthFrame.lastUnitMatch
+	
+	-- CRITICAL: Verify this unit actually exists and is in combat before using threat
+	if not unit or not UnitExists(unit) or not UnitAffectingCombat(unit) then
+		-- Unit not in combat or doesn't exist - apply reaction colors instead
+		if frame then
+			self:ApplyReactionColors(frame)
+		end
+		-- Hide threat indicators
+		healthFrame.threatDifferentialText:Hide()
+		healthFrame.threatNumberText:Hide()
+		healthFrame.threatPercentBar:Hide()
+		healthFrame.threatPercentText:Hide()
+		return
+	end
+	
 	local playerThreat = ThreatLib:GetThreat("player", unit) or 0
 	local playerThreatNumber = 1
 	local highestThreat, highestThreatMember = ThreatLib:GetMaxThreatOnTarget(unit, group)
 	local secondHighestThreat = 0
+	
+	-- If there's no threat data at all, apply reaction colors
+	if not highestThreat or highestThreat <= 0 then
+		if frame then
+			self:ApplyReactionColors(frame)
+		end
+		-- Hide threat indicators
+		healthFrame.threatDifferentialText:Hide()
+		healthFrame.threatNumberText:Hide()
+		healthFrame.threatPercentBar:Hide()
+		healthFrame.threatPercentText:Hide()
+		return
+	end
 	
 	if highestThreat and highestThreat > 0 then
 		-- Pre-calculate threat values for all group members
@@ -213,11 +241,18 @@ function NotPlater:OnNameplateMatch(healthFrame, group, ThreatLib)
 			
 			local colors = threatColorCache[colorKey]
 			
-			-- Apply nameplate color
+			-- Apply nameplate color - but check for class colors first
 			if self.db.profile.threat.nameplateColors.general.useClassColors and frame.unitClass then
 				healthFrame:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
 			elseif threatConfig.nameplateColors.general.enable then
-				healthFrame:SetStatusBarColor(self:GetColor(colors.bar))
+				-- Only apply threat colors if this is an NPC or if class colors aren't available
+				local isPlayer = unit and UnitIsPlayer(unit)
+				if not isPlayer or not frame.unitClass then
+					healthFrame:SetStatusBarColor(self:GetColor(colors.bar))
+				end
+			else
+				-- Threat coloring disabled - apply reaction colors
+				self:ApplyReactionColors(frame)
 			end
 
 			-- Update differential text
@@ -236,6 +271,9 @@ function NotPlater:OnNameplateMatch(healthFrame, group, ThreatLib)
 			else
 				healthFrame.threatDifferentialText:Hide()
 			end
+		else
+			-- Threat coloring disabled - apply reaction colors
+			self:ApplyReactionColors(frame)
 		end
 
 		-- Number text (optimized)
@@ -411,8 +449,8 @@ function NotPlater:ThreatCheck(frame)
                     end
                 end
                 
-                -- If we found a unit, try threat system
-                if unit then
+                -- If we found a unit AND it's in combat, try threat system
+                if unit and UnitAffectingCombat(unit) then
                     healthFrame.lastUnitMatch = unit
                     local group = self.raid or self.party
                     self:OnNameplateMatch(healthFrame, group)
@@ -420,9 +458,10 @@ function NotPlater:ThreatCheck(frame)
                 end
             end
         end
+        -- Fall through to apply reaction colors when no unit match or not in combat
     end
     
-    -- Not using threat system - apply reaction colors
+    -- Apply reaction colors as fallback (for NPCs not in combat, or when threat system not used)
     self:ApplyReactionColors(frame)
 end
 

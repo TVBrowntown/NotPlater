@@ -705,3 +705,64 @@ function NotPlater:UPDATE_MOUSEOVER_UNIT()
 		end
 	end
 end
+
+-- Add this function to NotPlater.lua
+function NotPlater:GetNameplateGUID(nameOrFrame)
+    -- If passed a frame directly
+    if type(nameOrFrame) == "table" and nameOrFrame.npHooked then
+        return nameOrFrame.unitGUID
+    end
+    
+    -- If passed a unit name
+    if type(nameOrFrame) == "string" then
+        for frame in pairs(frames) do
+            if frame:IsShown() then
+                local nameText = select(7, frame:GetRegions())
+                if nameText and nameText:GetText() == nameOrFrame then
+                    return frame.unitGUID
+                end
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Create a global API
+_G.NotPlaterAPI = _G.NotPlaterAPI or {}
+_G.NotPlaterAPI.GetNameplateGUID = function(nameOrFrame)
+    return NotPlater:GetNameplateGUID(nameOrFrame)
+end
+
+-- Get all visible nameplates with GUIDs
+function NotPlater:GetAllNameplateGUIDs()
+    local results = {}
+    for frame in pairs(frames) do
+        if frame:IsShown() and frame.unitGUID then
+            local nameText = select(7, frame:GetRegions())
+            local name = nameText and nameText:GetText() or "Unknown"
+            results[name] = frame.unitGUID
+        end
+    end
+    return results
+end
+
+_G.NotPlaterAPI.GetAllNameplateGUIDs = function()
+    return NotPlater:GetAllNameplateGUIDs()
+end
+
+--[[
+
+if NotPlaterAPI then
+    local targetGUID = NotPlaterAPI.GetNameplateGUID(UnitName("target"))
+    if targetGUID then
+        print("Target's GUID from nameplate:", targetGUID)
+    end
+    
+    local allGUIDs = NotPlaterAPI.GetAllNameplateGUIDs()
+    for name, guid in pairs(allGUIDs) do
+        print(name, "=>", guid)
+    end
+end
+
+]]--
