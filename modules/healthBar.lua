@@ -89,10 +89,20 @@ function NotPlater:HealthBarOnShow(oldHealthBar)
 		return
 	end
 	
+	local frame = oldHealthBar.healthBar:GetParent()
+	
 	-- Check if oldHealthBar has GetStatusBarColor method (i.e., is actually a StatusBar)
 	if oldHealthBar.GetStatusBarColor then
 		local r, g, b, a = oldHealthBar:GetStatusBarColor()
 		if r and g and b then
+			-- Store the original reaction color for NPCs
+			if frame and not frame.unitClass then
+				-- Only store if this looks like a reaction color (not default blue)
+				if not (math.abs(r - 0.5) < 0.01 and math.abs(g - 0.5) < 0.01 and math.abs(b - 1.0) < 0.01) then
+					frame.originalReactionColor = {r = r, g = g, b = b}
+				end
+			end
+			
 			oldHealthBar.healthBar:SetStatusBarColor(r, g, b, a or 1)
 		else
 			-- Fallback to default health bar color if no color is available

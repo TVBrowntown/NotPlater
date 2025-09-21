@@ -15,6 +15,9 @@ local MAX_PARTY_MEMBERS = MAX_PARTY_MEMBERS
 local MAX_RAID_MEMBERS = MAX_RAID_MEMBERS
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 
+local threatColorCache = {}
+local percentColorCache = {}
+
 local Threat = {}
 
 function Threat:GetThreat(unit, mobUnit)
@@ -82,9 +85,36 @@ function NotPlater:PARTY_MEMBERS_CHANGED()
 	end
 end
 
--- Add at the top of the file after local declarations
-local threatColorCache = {}
-local percentColorCache = {}
+function NotPlater:ApplyFallbackColors(healthFrame, unit, frame)
+	-- Try unit reaction colors first if we have a valid unit
+	if unit and UnitExists(unit) then
+		local success, r, g, b = pcall(function() return UnitSelectionColor(unit) end)
+		if success and r and g and b then
+			local success2, _ = pcall(function()
+				healthFrame:SetStatusBarColor(r, g, b, 1)
+			end)
+			if success2 then
+				return -- Successfully applied unit reaction color
+			end
+		end
+	end
+	
+	-- Fall back to default health bar color
+	if self.db.profile.healthBar.statusBar.general.enable then
+		local success, _ = pcall(function()
+			healthFrame:SetStatusBarColor(self:GetColor(self.db.profile.healthBar.statusBar.general.color))
+		end)
+		if success then
+			return -- Successfully applied default color
+		end
+	end
+	
+	-- Last resort: hardcoded safe color
+	local success, _ = pcall(function()
+		healthFrame:SetStatusBarColor(0.5, 0.5, 1, 1) -- Default blue
+	end)
+	-- If even this fails, there's a serious problem, but we won't crash
+end
 
 function NotPlater:OnNameplateMatch(healthFrame, group, ThreatLib)
 	if not ThreatLib then ThreatLib = Threat end
@@ -306,102 +336,94 @@ function NotPlater:MouseoverThreatCheck(healthFrame, guid)
 		return
 	end
 	
-	-- Only process if we're in a group
+	-- Check if we're in a group
 	if UnitInParty("party1") or UnitInRaid("player") then
-		healthFrame.lastUnitMatch = "mouseover"
-		local group = self.raid or self.party
-		if group then
-			self:OnNameplateMatch(healthFrame, group)
+		-- Only use threat system if colored threat nameplates are enabled
+		if self.db.profile.threat.general.useColoredThreatNameplates then
+			healthFrame.lastUnitMatch = "mouseover"
+			local group = self.raid or self.party
+			if group then
+				self:OnNameplateMatch(healthFrame, group)
+				return
+			end
 		end
-	else
-		-- Apply class colors or default colors when solo
-		if self.db.profile.threat.nameplateColors.general.useClassColors and frame.unitClass then
-			healthFrame:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
-		elseif self.db.profile.healthBar.statusBar.general.enable then
-			healthFrame:SetStatusBarColor(self:GetColor(self.db.profile.healthBar.statusBar.general.color))
+	end
+	
+	-- Not in group or threat coloring disabled - apply appropriate colors
+	
+	-- Priority 1: Class colors for players (if enabled)
+	if self.db.profile.threat.nameplateColors.general.useClassColors and frame.unitClass and 
+	   frame.unitClass.r and frame.unitClass.g and frame.unitClass.b then
+		healthFrame:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
+		return
+	end
+	
+	-- Priority 2: Reaction colors for NPCs
+	if UnitExists("mouseover") then
+		local r, g, b = UnitSelectionColor("mouseover")
+		if r and g and b then
+			healthFrame:SetStatusBarColor(r, g, b, 1)
+			return
 		end
+	end
+	
+	-- Priority 3: Default health bar color
+	if self.db.profile.healthBar.statusBar.general.enable then
+		healthFrame:SetStatusBarColor(self:GetColor(self.db.profile.healthBar.statusBar.general.color))
 	end
 end
 
 function NotPlater:ThreatCheck(frame)
-    local healthBarConfig = self.db.profile.healthBar
+    local healthFrame = frame.healthBar
+    if not healthFrame then return end
+    
     local threatConfig = self.db.profile.threat
-    local unitId = frame.unitId
-
-    if not unitId or UnitIsDeadOrGhost(unitId) then
-        return
-    end
-
-    if self.db.profile.threat.general.useColoredThreatNameplates then
-        local threatValue = UnitDetailedThreatSituation("player", unitId)
-
-        -- If threatValue is nil, it means there is no threat information available.
-        if threatValue then
-            local r, g, b
-            if threatConfig.general.mode == "tank" then
-                if UnitIsUnit("player", unitId) then
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatTanking.player)
-                elseif threatValue >= 2 and threatValue <= 3 then
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatTanking.c2)
-                elseif threatValue >= 4 and threatValue <= 5 then
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatTanking.c3)
+    
+    -- If we're in a group and threat coloring is enabled, try to use threat system
+    if threatConfig.general.useColoredThreatNameplates and (self.raid or self.party) then
+        -- Try to find a unit for this nameplate
+        local nameText, levelText = select(7, frame:GetRegions())
+        if nameText and levelText then
+            local name = nameText:GetText()
+            local level = levelText:GetText()
+            
+            if name and level then
+                local unit = nil
+                
+                -- Check for unit match
+                if self:IsTarget(frame) then
+                    unit = "target"
+                elseif UnitExists("mouseover") and name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) then
+                    unit = "mouseover"
+                elseif UnitExists("focus") and name == UnitName("focus") and level == tostring(UnitLevel("focus")) then
+                    unit = "focus"
                 else
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatTanking.c1)
+                    -- Check group targets
+                    local group = self.raid or self.party
+                    if group then
+                        for gMember, unitID in pairs(group) do
+                            local targetString = unitID .. "-target"
+                            if UnitExists(targetString) and name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) then
+                                unit = targetString
+                                break
+                            end
+                        end
+                    end
                 end
-            elseif threatConfig.general.mode == "hdps" then
-                if threatValue == 1 then
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatHealerDps.c1)
-                elseif threatValue == 2 then
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatHealerDps.c2)
-                elseif threatValue == 3 then
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatHealerDps.c3)
-                elseif threatValue == 4 then
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatHealerDps.c4)
-                elseif threatValue == 5 then
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatHealerDps.c5)
-                else
-                    r, g, b = unpack(threatConfig.nameplateColors.colors.threatHealerDps.c1)
+                
+                -- If we found a unit, try threat system
+                if unit then
+                    healthFrame.lastUnitMatch = unit
+                    local group = self.raid or self.party
+                    self:OnNameplateMatch(healthFrame, group)
+                    return
                 end
             end
-            frame.healthBar:SetStatusBarColor(r, g, b)
-            frame.healthBar.healthText:SetTextColor(r, g, b)
-
-            if frame.castBar then
-                frame.castBar:SetStatusBarColor(r, g, b)
-                frame.castBar.spellNameText:SetTextColor(r, g, b)
-            end
-        else
-            -- If UnitDetailedThreatSituation returns nil, use default healthbar color
-            local r, g, b
-            if (frame.unitClass and threatConfig.nameplateColors.general.useClassColors and UnitIsPlayer(unitId) and not threatConfig.general.useColoredThreatNameplates) then
-                r, g, b = unpack(frame.unitClass)
-            else
-                r, g, b = unpack(healthBarConfig.statusBar.colors.bar)
-            end
-            frame.healthBar:SetStatusBarColor(r, g, b)
-            frame.healthBar.healthText:SetTextColor(r, g, b)
-
-            if frame.castBar then
-                frame.castBar:SetStatusBarColor(r, g, b)
-                frame.castBar.spellNameText:SetTextColor(r, g, b)
-            end
-        end
-    else
-        -- Threat coloring is disabled, apply default healthbar color or class color
-        local r, g, b
-        if (frame.unitClass and threatConfig.nameplateColors.general.useClassColors and UnitIsPlayer(unitId)) then
-            r, g, b = unpack(frame.unitClass)
-        else
-            r, g, b = unpack(healthBarConfig.statusBar.colors.bar)
-        end
-        frame.healthBar:SetStatusBarColor(r, g, b)
-        frame.healthBar.healthText:SetTextColor(r, g, b)
-
-        if frame.castBar then
-            frame.castBar:SetStatusBarColor(r, g, b)
-            frame.castBar.spellNameText:SetTextColor(r, g, b)
         end
     end
+    
+    -- Not using threat system - apply reaction colors
+    self:ApplyReactionColors(frame)
 end
 
 function NotPlater:ScaleThreatComponents(healthFrame, isTarget)
@@ -482,4 +504,72 @@ function NotPlater:ConstructThreatComponents(healthFrame)
     healthFrame.threatPercentBar:SetMinMaxValues(0, 100)
     healthFrame.threatPercentBar:SetFrameLevel(healthFrame:GetFrameLevel() - 1)
     healthFrame.threatPercentBar:Hide()
+end
+
+function NotPlater:ApplyReactionColors(frame)
+    local healthFrame = frame.healthBar
+    if not healthFrame then return end
+    
+    local threatConfig = self.db.profile.threat
+    
+    -- Priority 1: Class colors for players (if enabled and available)
+    if threatConfig.nameplateColors.general.useClassColors and frame.unitClass and 
+       frame.unitClass.r and frame.unitClass.g and frame.unitClass.b then
+        healthFrame:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
+        return
+    end
+    
+    -- Priority 2: Use stored original reaction color if available
+    if frame.originalReactionColor then
+        healthFrame:SetStatusBarColor(frame.originalReactionColor.r, frame.originalReactionColor.g, frame.originalReactionColor.b, 1)
+        return
+    end
+    
+    -- Priority 3: Try to get unit and apply reaction colors for active units
+    local nameText, levelText = select(7, frame:GetRegions())
+    if nameText and levelText then
+        local name = nameText:GetText()
+        local level = levelText:GetText()
+        
+        if name and level then
+            local unit = nil
+            
+            -- Check for unit match
+            if self:IsTarget(frame) then
+                unit = "target"
+            elseif UnitExists("mouseover") and name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) then
+                unit = "mouseover"
+            elseif UnitExists("focus") and name == UnitName("focus") and level == tostring(UnitLevel("focus")) then
+                unit = "focus"
+            else
+                -- Check group targets
+                local group = self.raid or self.party
+                if group then
+                    for gMember, unitID in pairs(group) do
+                        local targetString = unitID .. "-target"
+                        if UnitExists(targetString) and name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) then
+                            unit = targetString
+                            break
+                        end
+                    end
+                end
+            end
+            
+            -- Apply reaction color if we found a unit
+            if unit then
+                local r, g, b = UnitSelectionColor(unit)
+                if r and g and b then
+                    healthFrame:SetStatusBarColor(r, g, b, 1)
+                    -- Store this as the original reaction color for future use
+                    frame.originalReactionColor = {r = r, g = g, b = b}
+                    return
+                end
+            end
+        end
+    end
+    
+    -- Priority 4: Default health bar color
+    if self.db.profile.healthBar.statusBar.general.enable then
+        healthFrame:SetStatusBarColor(self:GetColor(self.db.profile.healthBar.statusBar.general.color))
+    end
 end

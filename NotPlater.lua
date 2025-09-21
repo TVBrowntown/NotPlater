@@ -54,7 +54,8 @@ end
 function NotPlater:CleanupDeadFrames()
     local deadFrames = {}
     for frame in pairs(frames) do
-        if not frame:GetParent() or not frame:IsVisible() then
+        -- Only consider frame dead if it has no parent AND is not shown
+        if not frame:GetParent() and not frame:IsShown() then
             table.insert(deadFrames, frame)
         end
     end
@@ -66,7 +67,7 @@ function NotPlater:CleanupDeadFrames()
             frame.healthBar.lastMaxValue = nil
             frame.healthBar.lastTextUpdate = nil
         end
-        frame.unitClass = nil
+        -- Don't clear unitClass here - only clear on actual frame hide
         frame.wasTarget = nil
     end
 end
@@ -257,45 +258,55 @@ function NotPlater:PrepareFrame(frame)
 		-- Hide old healthbar
 		if health then health:Hide() end
 		
-		-- Set up OnShow hook
+		-- Set up OnShow hook - MINIMAL CHANGES ONLY
+		-- Set up OnShow hook with less aggressive clearing
 		self:HookScript(frame, "OnShow", function(self)
-			-- Force clear ALL cached data when showing
-			self.unitClass = nil
-			self.unitClassFromCache = nil
-			self.recentlySeen = nil
-			self.guildMember = nil
-			self.partyRaidMember = nil
-			self.lastCheckedName = nil
-			self.classCheckThrottle = 0
-			
-			-- Get the current nameplate name
+			-- Get current nameplate name
 			local nameText = select(7, self:GetRegions())
-			local playerName = nameText and nameText:GetText()
+			local currentPlayerName = nameText and nameText:GetText()
+			
+			-- Only clear class data if the nameplate name has actually changed
+			if currentPlayerName and currentPlayerName ~= self.lastCheckedName then
+				-- Name changed - clear class data for new player
+				self.unitClass = nil
+				self.unitClassFromCache = nil
+				self.recentlySeen = nil
+				self.guildMember = nil
+				self.partyRaidMember = nil
+				self.lastCheckedName = nil
+				self.classCheckThrottle = 0
+			elseif not currentPlayerName then
+				-- No name available, reset throttle but keep class data
+				self.classCheckThrottle = 0
+			end
 			
 			-- Immediate cache check on nameplate show
-			if playerName and NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
-				-- Check caches in priority order
-				local foundClass = false
-				
-				-- 1. Party/Raid cache (most immediate)
-				if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
-					foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(self)
-				end
-				
-				-- 2. Guild cache
-				if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
-					foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
-				end
-				
-				-- 3. Recently seen cache
-				if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
-					foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
-				end
-				
-				-- Apply colors immediately if found
-				if self.unitClass and self.healthBar then
-					self.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
-					self.lastCheckedName = playerName
+			if currentPlayerName and NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
+				-- Only do cache check if we don't already have class data
+				if not self.unitClass then
+					-- Check caches in priority order
+					local foundClass = false
+					
+					-- 1. Party/Raid cache (most immediate)
+					if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
+						foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(self)
+					end
+					
+					-- 2. Guild cache
+					if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
+						foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
+					end
+					
+					-- 3. Recently seen cache
+					if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
+						foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
+					end
+					
+					-- Apply colors immediately if found
+					if self.unitClass and self.healthBar then
+						self.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
+						self.lastCheckedName = currentPlayerName
+					end
 				end
 			end
 			
@@ -305,6 +316,9 @@ function NotPlater:PrepareFrame(frame)
 			NotPlater:ThreatComponentsOnShow(self)
 			NotPlater:TargetCheck(self)
 			self.targetChanged = true
+			
+			-- Apply proper colors when nameplate first shows
+			NotPlater:ThreatCheck(self)
 		end)
 		
 		-- Add OnHide to clear data
@@ -514,24 +528,49 @@ end
 function NotPlater:PLAYER_TARGET_CHANGED()
 	for frame in pairs(frames) do
 		frame.targetChanged = true
+		-- Force color update for all nameplates when target changes
+		-- This ensures NPCs get proper reaction colors
+		self:ThreatCheck(frame)
 	end
 end
 
 function NotPlater:ApplyUnitClassColor(frame)
-    -- Helper to apply class colors to a frame
-    if frame.unitClass and frame.healthBar then
+    -- Helper to apply class colors to a frame with error handling
+    if not frame or not frame.healthBar then
+        return false
+    end
+    
+    if not frame.unitClass or not frame.unitClass.r or not frame.unitClass.g or not frame.unitClass.b then
+        return false
+    end
+    
+    -- Validate color values are within expected range
+    if frame.unitClass.r < 0 or frame.unitClass.r > 1 or
+       frame.unitClass.g < 0 or frame.unitClass.g > 1 or
+       frame.unitClass.b < 0 or frame.unitClass.b > 1 then
+        -- Invalid color values, clear the class data
+        frame.unitClass = nil
+        return false
+    end
+    
+    local success, _ = pcall(function()
         frame.healthBar:SetStatusBarColor(
             frame.unitClass.r,
             frame.unitClass.g,
             frame.unitClass.b,
             1
         )
-        return true
+    end)
+    
+    if not success then
+        -- Color application failed, clear the class data
+        frame.unitClass = nil
+        return false
     end
-    return false
+    
+    return true
 end
 
--- WITH THE NEW VERSION that adds caching:
 function NotPlater:ClassCheck(frame)
     if frame.unitClass then return end
     
@@ -625,10 +664,7 @@ function NotPlater:ClassCheck(frame)
     
     -- If we found a player's class, add them to recently seen cache AND apply color
     if foundClass and foundClassFileName and foundUnit then
-        -- Store the class on the frame
-        if not frame.unitClass then
-            frame.unitClass = RAID_CLASS_COLORS[foundClassFileName]
-        end
+        -- Store the class on the frame (already done above)
         
         -- Only add players (not NPCs) to the cache
         if UnitIsPlayer(foundUnit) then
@@ -637,8 +673,10 @@ function NotPlater:ClassCheck(frame)
             end
         end
         
-        -- Apply color immediately
-        self:ApplyUnitClassColor(frame)
+        -- Apply color immediately - ONLY if we actually found valid class data
+        if frame.unitClass and frame.healthBar then
+            frame.healthBar:SetStatusBarColor(frame.unitClass.r, frame.unitClass.g, frame.unitClass.b, 1)
+        end
     end
 end
 

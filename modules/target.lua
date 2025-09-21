@@ -246,6 +246,9 @@ function NotPlater:TargetCheck(frame)
     if scaleConfig.threatIcon and frame.threatIcon then
         NotPlater:ScaleThreatIcon(frame, isTarget)
     end
+    
+    -- Update colors when target state changes
+    NotPlater:ThreatCheck(frame)
 end
 
 function NotPlater:ConstructTarget(frame)
