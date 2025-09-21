@@ -15,6 +15,19 @@ function NotPlater:LoadDefaultConfig()
             }
         },
         profile = {
+            zonePrecache = {
+                general = {
+                    enable = true,
+                    showMessages = true,
+                    suppressUI = true, -- Suppress /who UI by default
+                    zoneChangeDelay = 3, -- seconds to wait after zone change before executing /who
+                },
+                advanced = {
+                    debugMode = false,
+                    whoCooldown = 10, -- seconds between /who commands
+                    maxRetries = 3,
+                },
+            },
             guildCache = {
                 general = {
                     enable = true,

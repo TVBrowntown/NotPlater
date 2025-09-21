@@ -1495,4 +1495,192 @@ function ConfigPrototypes:LoadConfigPrototypes()
             },
         },
     }
+    ConfigPrototypes.ZonePrecache = {
+        general = {
+            order = 0,
+            type = "group",
+            inline = true,
+            name = L["General"],
+            args = {
+                enable = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Enable Zone Pre-cache"],
+                    desc = L["Automatically cache players in new zones using /who command"],
+                    width = "full",
+                    set = function(info, val)
+                        NotPlater.db.profile.zonePrecache.general.enable = val
+                        if val and NotPlater.ZonePrecache then
+                            NotPlater.ZonePrecache:Initialize()
+                        end
+                        NotPlater:Reload()
+                    end,
+                    get = function(info)
+                        return NotPlater.db.profile.zonePrecache.general.enable
+                    end,
+                },
+                requiresRecentlySeenHeader = {
+                    order = 1,
+                    type = "header",
+                    name = L["Note: Requires Recently Seen Cache to be enabled"],
+                    hidden = function()
+                        return NotPlater.db.profile.recentlySeenCache.general.enable
+                    end,
+                },
+                showMessages = {
+                    order = 2,
+                    type = "toggle",
+                    name = L["Show Cache Messages"],
+                    desc = L["Display messages when zone pre-caching occurs"],
+                    disabled = function() 
+                        return not NotPlater.db.profile.zonePrecache.general.enable 
+                    end,
+                },
+                suppressUI = {
+                    order = 3,
+                    type = "toggle",
+                    name = L["Suppress /who UI"],
+                    desc = L["Prevent the /who window from opening during automatic zone caching"],
+                    disabled = function() 
+                        return not NotPlater.db.profile.zonePrecache.general.enable 
+                    end,
+                    get = function(info)
+                        return NotPlater.db.profile.zonePrecache.general.suppressUI ~= false -- default true
+                    end,
+                    set = function(info, val)
+                        NotPlater.db.profile.zonePrecache.general.suppressUI = val
+                    end,
+                },
+                zoneChangeDelay = {
+                    order = 4,
+                    type = "range",
+                    name = L["Zone Change Delay"],
+                    desc = L["Seconds to wait after zone change before executing /who"],
+                    min = 1,
+                    max = 10,
+                    step = 1,
+                    disabled = function() 
+                        return not NotPlater.db.profile.zonePrecache.general.enable 
+                    end,
+                },
+            },
+        },
+        statistics = {
+            order = 1,
+            type = "group",
+            inline = true,
+            name = L["Statistics"],
+            args = {
+                header = {
+                    order = 0,
+                    type = "header",
+                    name = L["Zone Pre-cache Information"],
+                },
+                currentZone = {
+                    order = 1,
+                    type = "description",
+                    name = function()
+                        if NotPlater.ZonePrecache and NotPlater.ZonePrecache.GetStatistics then
+                            local stats = NotPlater.ZonePrecache:GetStatistics()
+                            return string.format(L["Current Zone: %s"], stats.currentZone)
+                        else
+                            return L["Zone Pre-cache not initialized"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                cooldownStatus = {
+                    order = 2,
+                    type = "description",
+                    name = function()
+                        if NotPlater.ZonePrecache and NotPlater.ZonePrecache.GetStatistics then
+                            local stats = NotPlater.ZonePrecache:GetStatistics()
+                            if stats.whoInProgress then
+                                return L["/who command in progress..."]
+                            elseif stats.cooldownRemaining > 0 then
+                                return string.format(L["/who cooldown: %.1f seconds remaining"], stats.cooldownRemaining)
+                            else
+                                return L["/who command ready"]
+                            end
+                        else
+                            return L["Status unknown"]
+                        end
+                    end,
+                    fontSize = "medium",
+                },
+                spacer1 = {
+                    order = 3,
+                    type = "description",
+                    name = " ",
+                },
+                manualTrigger = {
+                    order = 4,
+                    type = "execute",
+                    name = L["Trigger Zone Cache Now"],
+                    desc = L["Manually trigger /who for current zone (no UI)"],
+                    func = function()
+                        if NotPlater.ZonePrecache and NotPlater.ZonePrecache.TriggerManualCache then
+                            NotPlater.ZonePrecache:TriggerManualCache(false)
+                        end
+                    end,
+                    disabled = function() 
+                        if not NotPlater.db.profile.zonePrecache.general.enable then
+                            return true
+                        end
+                        if not NotPlater.db.profile.recentlySeenCache.general.enable then
+                            return true
+                        end
+                        if NotPlater.ZonePrecache and NotPlater.ZonePrecache.GetStatistics then
+                            local stats = NotPlater.ZonePrecache:GetStatistics()
+                            return not stats.canExecuteWho
+                        end
+                        return false
+                    end,
+                },
+                manualTriggerWithUI = {
+                    order = 5,
+                    type = "execute",
+                    name = L["Trigger Zone Cache (Show UI)"],
+                    desc = L["Manually trigger /who for current zone and show the results window"],
+                    func = function()
+                        if NotPlater.ZonePrecache and NotPlater.ZonePrecache.TriggerManualCache then
+                            NotPlater.ZonePrecache:TriggerManualCache(true)
+                        end
+                    end,
+                    disabled = function() 
+                        if not NotPlater.db.profile.zonePrecache.general.enable then
+                            return true
+                        end
+                        if not NotPlater.db.profile.recentlySeenCache.general.enable then
+                            return true
+                        end
+                        if NotPlater.ZonePrecache and NotPlater.ZonePrecache.GetStatistics then
+                            local stats = NotPlater.ZonePrecache:GetStatistics()
+                            return not stats.canExecuteWho
+                        end
+                        return false
+                    end,
+                },
+            },
+        },
+        advanced = {
+            order = 2,
+            type = "group",
+            inline = true,
+            name = L["Advanced"],
+            args = {
+                debugMode = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Debug Mode"],
+                    desc = L["Enable debug messages for zone pre-cache operations"],
+                    get = function(info) return NotPlater.db.profile.zonePrecache.advanced.debugMode end,
+                    set = function(info, val) NotPlater.db.profile.zonePrecache.advanced.debugMode = val end,
+                    disabled = function() 
+                        return not NotPlater.db.profile.zonePrecache.general.enable 
+                    end,
+                },
+            },
+        },
+    }
 end

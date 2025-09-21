@@ -35,3 +35,4 @@ modules\threat-icon-3.3.5.lua
 modules\guildCache.lua
 modules\partyRaidCache.lua
 modules\recentlySeenCache.lua
+modules\zonePrecache.lua

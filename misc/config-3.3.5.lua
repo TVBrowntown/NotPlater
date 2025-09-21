@@ -561,6 +561,17 @@ local function LoadOptions()
 			args = NotPlater.ConfigPrototypes.RecentlySeenCache
 		}
 	end
+
+	if NotPlater.ConfigPrototypes.ZonePrecache then
+	    options.args.zonePrecache = {
+	        order = 10.5,
+	        type = "group",
+	        name = L["Zone Pre-cache"],
+	        get = GetValue,
+	        set = SetValue,
+	        args = NotPlater.ConfigPrototypes.ZonePrecache
+	    }
+	end
 	
 	options.args.simulator = {
 		order = 11,
@@ -607,32 +618,38 @@ end
 SLASH_NOTPLATER1 = "/notplater"
 SLASH_NOTPLATER2 = "/np"
 SlashCmdList["NOTPLATER"] = function(input)
-	local args, msg = {}, nil
+    local args, msg = {}, nil
 
     for v in sgmatch(input, "%S+") do
         if not msg then
-			msg = v
+            msg = v
         else
-			tinsert(args, v)
+            tinsert(args, v)
         end
     end
 
     if msg == "minimap" then
         ToggleMinimap()
     elseif msg == "simulator" then
-		NotPlater:ToggleSimulatorFrame()
+        NotPlater:ToggleSimulatorFrame()
     elseif msg == "export" then
         NotPlater:ExportSettingsString()
     elseif msg == "import" then
         NotPlater:ShowImportFrame()
-	elseif msg == "help" then
+    elseif msg == "zone" or msg == "zonecache" then
+        if NotPlater.ZonePrecache and NotPlater.ZonePrecache.TriggerManualCache then
+            NotPlater.ZonePrecache:TriggerManualCache()
+        else
+            NotPlater:Print("Zone Pre-cache not available")
+        end
+    elseif msg == "help" then
         NotPlater:PrintHelp()
-	else
-		Config:ToggleConfig()
+    else
+        Config:ToggleConfig()
     end
 end
 
--- Update the help function
+-- Update the help function:
 function NotPlater:PrintHelp()
     self:Print(L["Usage:"])
     self:Print(L["/np help - Show this message"])
@@ -641,6 +658,7 @@ function NotPlater:PrintHelp()
     self:Print(L["/np minimap - Toggle the minimap icon"])
     self:Print("/np export - Export settings as shareable string")
     self:Print("/np import - Import settings from string")
+    self:Print("/np zone - Manually trigger zone player pre-cache")
 end
 
 --[[
