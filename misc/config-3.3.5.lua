@@ -540,6 +540,15 @@ local function LoadOptions()
 		}
 	end
 
+	options.args.sct = {
+	    order = 8.5,  -- Place it after guild cache
+	    type = "group",
+	    name = L["Scrolling Combat Text"],
+	    get = GetValue,
+	    set = SetValue,
+	    args = NotPlater.ConfigPrototypes.ScrollingCombatText
+	}
+
 	if NotPlater.ConfigPrototypes.PartyRaidCache then
 		options.args.partyRaidCache = {
 		    order = 9,

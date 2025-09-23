@@ -1683,4 +1683,167 @@ function ConfigPrototypes:LoadConfigPrototypes()
             },
         },
     }
+    ConfigPrototypes.ScrollingCombatText = {
+        general = {
+            order = 0,
+            type = "group",
+            inline = true,
+            name = L["General"],
+            args = {
+                enable = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Enable"],
+                    desc = L["Enable Scrolling Combat Text on nameplates"],
+                    width = "full",
+                },
+                testMode = {
+                    order = 1,
+                    type = "execute",
+                    name = L["Test Mode"],
+                    desc = L["Show test combat text"],
+                    func = function() 
+                        if NotPlater.SCT then
+                            NotPlater.SCT:TestMode()
+                        end
+                    end,
+                },
+            },
+        },
+        display = {
+            order = 1,
+            type = "group",
+            inline = true,
+            name = L["Display"],
+            args = {
+                truncate = {
+                    order = 0,
+                    type = "toggle",
+                    name = L["Truncate Numbers"],
+                    desc = L["Shorten large numbers (10000 -> 10k)"],
+                },
+                truncateLetter = {
+                    order = 1,
+                    type = "toggle",
+                    name = L["Show Truncate Letter"],
+                    desc = L["Show k/M suffix on truncated numbers"],
+                    disabled = function() return not NotPlater.db.profile.sct.display.truncate end,
+                },
+                commaSeparate = {
+                    order = 2,
+                    type = "toggle",
+                    name = L["Comma Separate"],
+                    desc = L["Show commas in large numbers (10000 -> 10,000)"],
+                    disabled = function() return NotPlater.db.profile.sct.display.truncate end,
+                },
+                showIcon = {
+                    order = 3,
+                    type = "toggle",
+                    name = L["Show Spell Icons"],
+                    desc = L["Display spell icon next to damage numbers"],
+                },
+                iconScale = {
+                    order = 4,
+                    type = "range",
+                    name = L["Icon Scale"],
+                    min = 0.5, max = 2, step = 0.1,
+                    disabled = function() return not NotPlater.db.profile.sct.display.showIcon end,
+                },
+                showHeals = {
+                    order = 5,
+                    type = "toggle",
+                    name = L["Show Heals"],
+                    desc = L["Display healing numbers"],
+                },
+                displayOverkill = {
+                    order = 6,
+                    type = "toggle",
+                    name = L["Show Overkill"],
+                    desc = L["Display overkill amount"],
+                },
+            },
+        },
+        font = {
+            order = 2,
+            type = "group",
+            inline = true,
+            name = L["Font"],
+            args = {
+                name = {
+                    order = 0,
+                    type = "select",
+                    name = L["Font"],
+                    values = GetFonts,
+                },
+                size = {
+                    order = 1,
+                    type = "range",
+                    name = L["Size"],
+                    min = 8, max = 40, step = 1,
+                },
+                outline = {
+                    order = 2,
+                    type = "select",
+                    name = L["Outline"],
+                    values = fontBorders,
+                },
+                shadow = {
+                    order = 3,
+                    type = "toggle",
+                    name = L["Shadow"],
+                },
+            },
+        },
+        animations = {
+            order = 3,
+            type = "group",
+            inline = true,
+            name = L["Animations"],
+            args = {
+                speed = {
+                    order = 0,
+                    type = "range",
+                    name = L["Animation Speed"],
+                    desc = L["Speed of the scrolling animation"],
+                    min = 0.5, max = 2, step = 0.1,
+                },
+                ability = {
+                    order = 1,
+                    type = "select",
+                    name = L["Abilities"],
+                    values = {
+                        ["verticalUp"] = L["Vertical Up"],
+                        ["verticalDown"] = L["Vertical Down"],
+                        ["fountain"] = L["Fountain"],
+                        ["rainfall"] = L["Rainfall"],
+                        ["disabled"] = L["Disabled"],
+                    },
+                },
+                crit = {
+                    order = 2,
+                    type = "select",
+                    name = L["Critical Hits"],
+                    values = {
+                        ["verticalUp"] = L["Vertical Up"],
+                        ["verticalDown"] = L["Vertical Down"],
+                        ["fountain"] = L["Fountain"],
+                        ["rainfall"] = L["Rainfall"],
+                        ["disabled"] = L["Disabled"],
+                    },
+                },
+                autoattack = {
+                    order = 3,
+                    type = "select",
+                    name = L["Auto Attacks"],
+                    values = {
+                        ["verticalUp"] = L["Vertical Up"],
+                        ["verticalDown"] = L["Vertical Down"],
+                        ["fountain"] = L["Fountain"],
+                        ["rainfall"] = L["Rainfall"],
+                        ["disabled"] = L["Disabled"],
+                    },
+                },
+            },
+        },
+    }
 end

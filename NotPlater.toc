@@ -36,3 +36,4 @@ modules\guildCache.lua
 modules\partyRaidCache.lua
 modules\recentlySeenCache.lua
 modules\zonePrecache.lua
+modules\sct.lua

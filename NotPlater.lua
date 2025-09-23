@@ -11,6 +11,72 @@ local RAID_CLASS_COLORS = RAID_CLASS_COLORS
 local frames = {}
 local numChildren = -1
 
+-- Expose frames table for modules
+NotPlater.frames = frames
+
+-- Get a nameplate frame by GUID
+function NotPlater:GetNameplateByGUID(guid)
+    if not guid then return nil end
+    
+    -- Check all visible nameplates
+    for frame in pairs(frames) do
+        if frame:IsShown() then
+            -- Check if this frame has a stored GUID
+            if frame.unitGUID == guid then
+                return frame
+            end
+            
+            -- Check by unit matching
+            local nameText, levelText = select(7, frame:GetRegions())
+            if nameText and levelText then
+                local name = nameText:GetText()
+                local level = levelText:GetText()
+                
+                -- Check common units
+                if UnitExists("target") and UnitGUID("target") == guid then
+                    if name == UnitName("target") and level == tostring(UnitLevel("target")) then
+                        frame.unitGUID = guid
+                        return frame
+                    end
+                elseif UnitExists("mouseover") and UnitGUID("mouseover") == guid then
+                    if name == UnitName("mouseover") and level == tostring(UnitLevel("mouseover")) then
+                        frame.unitGUID = guid
+                        return frame
+                    end
+                elseif UnitExists("focus") and UnitGUID("focus") == guid then
+                    if name == UnitName("focus") and level == tostring(UnitLevel("focus")) then
+                        frame.unitGUID = guid
+                        return frame
+                    end
+                end
+                
+                -- Check party/raid targets
+                local group = self.raid or self.party
+                if group then
+                    for gMember, unitID in pairs(group) do
+                        local targetString = unitID .. "-target"
+                        if UnitExists(targetString) and UnitGUID(targetString) == guid then
+                            if name == UnitName(targetString) and level == tostring(UnitLevel(targetString)) then
+                                frame.unitGUID = guid
+                                return frame
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return nil
+end
+
+function NotPlater:CleanupFrameName(frame)
+    if frame.npGlobalName then
+        _G[frame.npGlobalName] = nil
+        frame.npGlobalName = nil
+    end
+end
+
 local deadFramesCache = {}
 
 -- DO NOT create frame here - wait for OnInitialize
@@ -67,40 +133,42 @@ function NotPlater:CleanupDeadFrames()
             frame.healthBar.lastMaxValue = nil
             frame.healthBar.lastTextUpdate = nil
         end
-        -- Don't clear unitClass here - only clear on actual frame hide
+        -- Clear GUID when frame is cleaned up
+        frame.unitGUID = nil
+        frame.unitClass = nil
         frame.wasTarget = nil
     end
 end
 
 function NotPlater:SetupFrameScripts()
-	-- Make sure frame exists
-	if not self.frame then
-		self.frame = CreateFrame("Frame")
-	end
-	
-	-- Set up the OnUpdate script with throttling
-	local updateThrottle = 0
-	local cleanupTimer = 0
-	local UPDATE_INTERVAL = 0.1 -- Keep original timing for stability
-	local CLEANUP_INTERVAL = 30 -- Keep original timing
-	
-	self.frame:SetScript("OnUpdate", function(self, elapsed)
-		updateThrottle = updateThrottle + elapsed
-		if updateThrottle >= UPDATE_INTERVAL then
-			if(WorldFrame:GetNumChildren() ~= numChildren) then
-				numChildren = WorldFrame:GetNumChildren()
-				NotPlater:HookFrames(WorldFrame:GetChildren())
-			end
-			updateThrottle = 0
-		end
-		
-		-- Add cleanup every 30 seconds
-		cleanupTimer = cleanupTimer + elapsed
-		if cleanupTimer >= CLEANUP_INTERVAL then
-			NotPlater:CleanupDeadFrames()
-			cleanupTimer = 0
-		end
-	end)
+    -- Make sure frame exists
+    if not self.frame then
+        self.frame = CreateFrame("Frame")
+    end
+    
+    -- Set up the OnUpdate script with throttling
+    local updateThrottle = 0
+    local cleanupTimer = 0
+    local UPDATE_INTERVAL = 0.1
+    local CLEANUP_INTERVAL = 30
+    
+    self.frame:SetScript("OnUpdate", function(self, elapsed)
+        updateThrottle = updateThrottle + elapsed
+        if updateThrottle >= UPDATE_INTERVAL then
+            if(WorldFrame:GetNumChildren() ~= numChildren) then
+                numChildren = WorldFrame:GetNumChildren()
+                NotPlater:HookFrames(WorldFrame:GetChildren())
+            end
+            updateThrottle = 0
+        end
+        
+        -- Add cleanup every 30 seconds
+        cleanupTimer = cleanupTimer + elapsed
+        if cleanupTimer >= CLEANUP_INTERVAL then
+            NotPlater:CleanupDeadFrames()
+            cleanupTimer = 0
+        end
+    end)
 
 	-- Set up the OnEvent script (keep original structure)
 	self.frame:SetScript("OnEvent", function(self, event, unit)
@@ -258,67 +326,66 @@ function NotPlater:PrepareFrame(frame)
 		-- Hide old healthbar
 		if health then health:Hide() end
 		
-		-- Set up OnShow hook - MINIMAL CHANGES ONLY
 		-- Set up OnShow hook with less aggressive clearing
-		self:HookScript(frame, "OnShow", function(self)
-			-- Get current nameplate name
-			local nameText = select(7, self:GetRegions())
-			local currentPlayerName = nameText and nameText:GetText()
-			
-			-- Only clear class data if the nameplate name has actually changed
-			if currentPlayerName and currentPlayerName ~= self.lastCheckedName then
-				-- Name changed - clear class data for new player
-				self.unitClass = nil
-				self.unitClassFromCache = nil
-				self.recentlySeen = nil
-				self.guildMember = nil
-				self.partyRaidMember = nil
-				self.lastCheckedName = nil
-				self.classCheckThrottle = 0
-			elseif not currentPlayerName then
-				-- No name available, reset throttle but keep class data
-				self.classCheckThrottle = 0
-			end
-			
-			-- Immediate cache check on nameplate show
-			if currentPlayerName and NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
-				-- Only do cache check if we don't already have class data
-				if not self.unitClass then
-					-- Check caches in priority order
-					local foundClass = false
-					
-					-- 1. Party/Raid cache (most immediate)
-					if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
-						foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(self)
-					end
-					
-					-- 2. Guild cache
-					if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
-						foundClass = NotPlater.GuildCache:EnhancedClassCheck(self)
-					end
-					
-					-- 3. Recently seen cache
-					if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
-						foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(self)
-					end
-					
-					-- Apply colors immediately if found
-					if self.unitClass and self.healthBar then
-						self.healthBar:SetStatusBarColor(self.unitClass.r, self.unitClass.g, self.unitClass.b, 1)
-						self.lastCheckedName = currentPlayerName
-					end
-				end
-			end
-			
-			NotPlater:CastBarOnShow(self)
-			NotPlater:HealthBarOnShow(health)
-			NotPlater:StackingCheck(self)
-			NotPlater:ThreatComponentsOnShow(self)
-			NotPlater:TargetCheck(self)
-			self.targetChanged = true
-			
-			-- Apply proper colors when nameplate first shows
-			NotPlater:ThreatCheck(self)
+		self:HookScript(frame, "OnShow", function(f)  -- Changed parameter name to avoid confusion
+		    -- Get current nameplate name
+		    local nameText = select(7, f:GetRegions())
+		    local currentPlayerName = nameText and nameText:GetText()
+		    
+		    -- Only clear class data if the nameplate name has actually changed
+		    if currentPlayerName and currentPlayerName ~= f.lastCheckedName then
+		        -- Name changed - clear class data for new player
+		        f.unitClass = nil
+		        f.unitClassFromCache = nil
+		        f.recentlySeen = nil
+		        f.guildMember = nil
+		        f.partyRaidMember = nil
+		        f.lastCheckedName = nil
+		        f.classCheckThrottle = 0
+		    elseif not currentPlayerName then
+		        -- No name available, reset throttle but keep class data
+		        f.classCheckThrottle = 0
+		    end
+		    
+		    -- Immediate cache check on nameplate show
+		    if currentPlayerName and NotPlater.db.profile.threat.nameplateColors.general.useClassColors then
+		        -- Only do cache check if we don't already have class data
+		        if not f.unitClass then
+		            -- Check caches in priority order
+		            local foundClass = false
+		            
+		            -- 1. Party/Raid cache (most immediate)
+		            if NotPlater.PartyRaidCache and NotPlater.PartyRaidCache.EnhancedClassCheck then
+		                foundClass = NotPlater.PartyRaidCache:EnhancedClassCheck(f)
+		            end
+		            
+		            -- 2. Guild cache
+		            if not foundClass and NotPlater.GuildCache and NotPlater.GuildCache.EnhancedClassCheck then
+		                foundClass = NotPlater.GuildCache:EnhancedClassCheck(f)
+		            end
+		            
+		            -- 3. Recently seen cache
+		            if not foundClass and NotPlater.RecentlySeenCache and NotPlater.RecentlySeenCache.EnhancedClassCheck then
+		                foundClass = NotPlater.RecentlySeenCache:EnhancedClassCheck(f)
+		            end
+		            
+		            -- Apply colors immediately if found
+		            if f.unitClass and f.healthBar then
+		                f.healthBar:SetStatusBarColor(f.unitClass.r, f.unitClass.g, f.unitClass.b, 1)
+		                f.lastCheckedName = currentPlayerName
+		            end
+		        end
+		    end
+		    
+		    NotPlater:CastBarOnShow(f)
+		    NotPlater:HealthBarOnShow(health)
+		    NotPlater:StackingCheck(f)
+		    NotPlater:ThreatComponentsOnShow(f)
+		    NotPlater:TargetCheck(f)
+		    f.targetChanged = true
+		    
+		    -- Apply proper colors when nameplate first shows
+		    NotPlater:ThreatCheck(f)
 		end)
 		
 		-- Add OnHide to clear data
@@ -331,6 +398,9 @@ function NotPlater:PrepareFrame(frame)
 			self.partyRaidMember = nil
 			self.wasTarget = nil
 			self.classCheckThrottle = nil
+
+			-- Clean up global name reference
+		    NotPlater:CleanupFrameName(self)
 		end)
 
 		-- Optimized OnUpdate that continuously hides default cast elements
@@ -706,6 +776,8 @@ function NotPlater:UPDATE_MOUSEOVER_UNIT()
 	end
 end
 
+
+--[[
 -- Add this function to NotPlater.lua
 function NotPlater:GetNameplateGUID(nameOrFrame)
     -- If passed a frame directly
@@ -728,12 +800,6 @@ function NotPlater:GetNameplateGUID(nameOrFrame)
     return nil
 end
 
--- Create a global API
-_G.NotPlaterAPI = _G.NotPlaterAPI or {}
-_G.NotPlaterAPI.GetNameplateGUID = function(nameOrFrame)
-    return NotPlater:GetNameplateGUID(nameOrFrame)
-end
-
 -- Get all visible nameplates with GUIDs
 function NotPlater:GetAllNameplateGUIDs()
     local results = {}
@@ -751,8 +817,6 @@ _G.NotPlaterAPI.GetAllNameplateGUIDs = function()
     return NotPlater:GetAllNameplateGUIDs()
 end
 
---[[
-
 if NotPlaterAPI then
     local targetGUID = NotPlaterAPI.GetNameplateGUID(UnitName("target"))
     if targetGUID then
@@ -763,6 +827,103 @@ if NotPlaterAPI then
     for name, guid in pairs(allGUIDs) do
         print(name, "=>", guid)
     end
+end
+
+-- Get or create a global name for a nameplate frame by GUID
+function NotPlater:GetNameplateFrameNameByGUID(guid)
+    if not guid then return nil end
+    
+    for frame in pairs(frames) do
+        if frame:IsShown() and frame.unitGUID == guid then
+            -- If frame doesn't have a name, create one
+            if not frame.npGlobalName then
+                -- Find next available index
+                local index = 1
+                while _G["NotPlaterFrame" .. index] do
+                    index = index + 1
+                end
+                
+                -- Assign the name
+                frame.npGlobalName = "NotPlaterFrame" .. index
+                _G[frame.npGlobalName] = frame
+            end
+            
+            return frame.npGlobalName
+        end
+    end
+    
+    return nil
+end
+
+-- Get or create a global name for a nameplate frame by unit
+function NotPlater:GetNameplateFrameNameByUnit(unit)
+    if not unit or not UnitExists(unit) then return nil end
+    
+    local unitGUID = UnitGUID(unit)
+    if unitGUID then
+        -- Try by GUID first (most reliable)
+        local frameName = self:GetNameplateFrameNameByGUID(unitGUID)
+        if frameName then
+            return frameName
+        end
+    end
+    
+    -- Fallback to name/level matching
+    local unitName = UnitName(unit)
+    local unitLevel = tostring(UnitLevel(unit))
+    
+    for frame in pairs(frames) do
+        if frame:IsShown() then
+            local nameText, levelText = select(7, frame:GetRegions())
+            if nameText and levelText then
+                if nameText:GetText() == unitName and levelText:GetText() == unitLevel then
+                    -- If frame doesn't have a name, create one
+                    if not frame.npGlobalName then
+                        local index = 1
+                        while _G["NotPlaterFrame" .. index] do
+                            index = index + 1
+                        end
+                        
+                        frame.npGlobalName = "NotPlaterFrame" .. index
+                        _G[frame.npGlobalName] = frame
+                    end
+                    
+                    -- Update GUID if we have it
+                    if unitGUID and not frame.unitGUID then
+                        frame.unitGUID = unitGUID
+                    end
+                    
+                    return frame.npGlobalName
+                end
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Clean up global references when frames are hidden
+function NotPlater:CleanupFrameName(frame)
+    if frame.npGlobalName then
+        _G[frame.npGlobalName] = nil
+        frame.npGlobalName = nil
+    end
+end
+
+
+-- Create a global API
+_G.NotPlaterAPI = _G.NotPlaterAPI or {}
+
+_G.NotPlaterAPI.GetNameplateGUID = function(nameOrFrame)
+    return NotPlater:GetNameplateGUID(nameOrFrame)
+end
+
+_G.NotPlaterAPI.GetNameplateFrameNameByGUID = function(guid)
+    return NotPlater:GetNameplateFrameNameByGUID(guid)
+end
+
+_G.NotPlaterAPI.GetNameplateFrameNameByUnit = function(unit)
+    return NotPlater:GetNameplateFrameNameByUnit(unit)
 end
 
 ]]--
