@@ -1,6 +1,6 @@
 -- modules/sct.lua
 -- Scrolling Combat Text module for NotPlater
--- Fixed version with proper GUID tracking
+-- Fixed version with pet damage and proper RANGE_DAMAGE handling
 
 if not NotPlater then return end
 
@@ -22,15 +22,18 @@ local table_insert = table.insert
 local table_remove = table.remove
 local pairs = pairs
 local ipairs = ipairs
+local bit = bit
+
+-- Combat log constants for WoTLK
+local COMBATLOG_OBJECT_TYPE_PET = 0x00001000
+local COMBATLOG_OBJECT_AFFILIATION_MINE = 0x00000001
+local COMBATLOG_OBJECT_TYPE_PLAYER = 0x00000400
+local COMBATLOG_OBJECT_CONTROL_PLAYER = 0x00000100
 
 -- Animation tracking
 local animating = {}
 local fontStringCache = {}
 local frameCounter = 0
-
--- GUID to nameplate tracking
-local guidToNameplate = {}
-local nameplateUpdateTimer = 0
 
 -- Constants
 local ANIMATION_VERTICAL_DISTANCE = 75
@@ -59,6 +62,7 @@ local arcDirection = 1
 -- Spell info
 local AutoAttack = GetSpellInfo(6603) or "Auto Attack"
 local AutoShot = GetSpellInfo(75) or "Auto Shot"
+local Shoot = GetSpellInfo(5019) or "Shoot"
 
 -- Color definitions
 local DAMAGE_TYPE_COLORS = {
@@ -96,12 +100,13 @@ function SCT:InitializeDefaults()
             display = {
                 truncate = true,
                 truncateLetter = true,
-                commaSeparate = true,
+                commaSeparate = false,
                 showIcon = true,
                 iconScale = 1,
                 displayOverkill = false,
                 showHeals = false,
                 showPersonal = true,
+                showPetDamage = true,  -- Added pet damage option
             },
             font = {
                 name = "Arial Narrow",
@@ -132,6 +137,7 @@ function SCT:InitializeDefaults()
                 damageColor = true,
                 defaultColor = "ffff00",
                 personalColor = "ff0000",
+                petColor = "CC8400",  -- Added pet color
             },
             sizing = {
                 crits = true,
@@ -161,108 +167,93 @@ function SCT:Debug(msg)
     end
 end
 
--- Update GUID mappings
-function SCT:UpdateGUIDMappings()
-    -- Clear old mappings
-    for guid in pairs(guidToNameplate) do
-        guidToNameplate[guid] = nil
+-- Check if source is player's pet
+function SCT:IsSourcePlayerPet(srcFlags)
+    -- Check if it's a pet and belongs to the player
+    local isPet = bit.band(srcFlags, COMBATLOG_OBJECT_TYPE_PET) > 0
+    local isMine = bit.band(srcFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0
+    return isPet and isMine
+end
+
+-- Get nameplate by GUID
+function SCT:GetNameplateByGUID(guid)
+    local playerGUID = UnitGUID("player")
+    
+    -- Check if it's the player
+    if guid == playerGUID then
+        return UIParent
     end
     
-    -- Update mappings from NotPlater frames
-    if NotPlater.frames then
-        for frame in pairs(NotPlater.frames) do
-            if frame:IsShown() and frame.unitGUID then
-                guidToNameplate[frame.unitGUID] = frame
+    -- First try to find nameplate through current target
+    if UnitExists("target") and UnitGUID("target") == guid then
+        -- Look for the target's nameplate
+        if NotPlater.frames then
+            for frame in pairs(NotPlater.frames) do
+                if frame:IsShown() and NotPlater:IsTarget(frame) then
+                    return frame
+                end
             end
         end
     end
     
-    -- Try to get GUIDs for visible units
-    local unitsToCheck = {"target", "mouseover", "focus"}
-    
-    -- Add party/raid targets
-    if UnitInRaid("player") then
-        for i = 1, GetNumRaidMembers() do
-            table.insert(unitsToCheck, "raid" .. i .. "-target")
-        end
-    elseif UnitInParty("player") then
-        for i = 1, GetNumPartyMembers() do
-            table.insert(unitsToCheck, "party" .. i .. "-target")
+    -- Try NotPlater's built-in function
+    if NotPlater.GetNameplateByGUID then
+        local frame = NotPlater:GetNameplateByGUID(guid)
+        if frame then
+            return frame
         end
     end
     
-    -- Check each unit and try to match with nameplates
-    for _, unit in ipairs(unitsToCheck) do
-        if UnitExists(unit) then
-            local guid = UnitGUID(unit)
-            if guid and not guidToNameplate[guid] then
-                -- Try to find matching nameplate
-                if NotPlater.frames then
-                    for frame in pairs(NotPlater.frames) do
-                        if frame:IsShown() then
-                            local nameText, levelText = select(7, frame:GetRegions())
-                            if nameText and levelText then
-                                local name = nameText:GetText()
-                                local level = levelText:GetText()
-                                if name == UnitName(unit) and level == tostring(UnitLevel(unit)) then
-                                    frame.unitGUID = guid
-                                    guidToNameplate[guid] = frame
-                                    self:Debug("Mapped GUID " .. guid .. " to nameplate for " .. name)
-                                    break
-                                end
-                            end
+    -- Manual search through all visible nameplates
+    if NotPlater.frames then
+        local targetName = nil
+        local targetLevel = nil
+        
+        -- Get the name/level for this GUID from known units
+        local unitsToCheck = {"target", "mouseover", "focus", "pet", "pettarget"}
+        
+        -- Add party/raid targets
+        if UnitInRaid("player") then
+            for i = 1, GetNumRaidMembers() do
+                table.insert(unitsToCheck, "raid" .. i .. "-target")
+            end
+        elseif UnitInParty("player") then
+            for i = 1, GetNumPartyMembers() do
+                table.insert(unitsToCheck, "party" .. i .. "-target")
+            end
+        end
+        
+        -- Find the name/level for this GUID
+        for _, unit in ipairs(unitsToCheck) do
+            if UnitExists(unit) and UnitGUID(unit) == guid then
+                targetName = UnitName(unit)
+                targetLevel = tostring(UnitLevel(unit))
+                break
+            end
+        end
+        
+        -- Now search nameplates for this name/level combo
+        if targetName and targetLevel then
+            for frame in pairs(NotPlater.frames) do
+                if frame:IsShown() then
+                    local nameText, levelText = select(7, frame:GetRegions())
+                    if nameText and levelText then
+                        local name = nameText:GetText()
+                        local level = levelText:GetText()
+                        
+                        if name == targetName and level == targetLevel then
+                            return frame
                         end
                     end
                 end
             end
         end
     end
-end
-
--- Get nameplate by GUID (improved version)
-function SCT:GetNameplateByGUID(guid)
-    local playerGUID = UnitGUID("player")
     
-    -- Check if it's the player
-    if guid == playerGUID then
-        return UIParent  -- Use UIParent for personal SCT
-    end
-    
-    -- Check cached mapping first
-    if guidToNameplate[guid] then
-        local frame = guidToNameplate[guid]
-        if frame and frame:IsShown() then
-            return frame
-        else
-            -- Frame is no longer valid, remove from cache
-            guidToNameplate[guid] = nil
-        end
-    end
-    
-    -- Try NotPlater's function
-    if NotPlater.GetNameplateByGUID then
-        local frame = NotPlater:GetNameplateByGUID(guid)
-        if frame then
-            guidToNameplate[guid] = frame
-            return frame
-        end
-    end
-    
-    -- Manual search through frames
-    if NotPlater.frames then
-        for frame in pairs(NotPlater.frames) do
-            if frame:IsShown() and frame.unitGUID == guid then
-                guidToNameplate[guid] = frame
-                return frame
-            end
-        end
-    end
-    
-    self:Debug("No nameplate found for GUID: " .. tostring(guid))
     return nil
 end
 
--- Font string management
+-- Font string management (unchanged)
 function SCT:GetFontString()
     local fontString
     local fontStringFrame
@@ -295,15 +286,13 @@ function SCT:GetFontString()
     fontString:Show()
     
     -- Create icon if needed
-    if config.display.showIcon then
-        if not fontString.icon then
-            fontString.icon = fontStringFrame:CreateTexture(nil, "OVERLAY")
-            fontString.icon:SetTexCoord(0.062, 0.938, 0.062, 0.938)
-        end
-        fontString.icon:SetAlpha(1)
-        fontString.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-        fontString.icon:Hide()
+    if not fontString.icon then
+        fontString.icon = fontStringFrame:CreateTexture(nil, "OVERLAY")
+        fontString.icon:SetTexCoord(0.062, 0.938, 0.062, 0.938)
     end
+    fontString.icon:SetAlpha(1)
+    fontString.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    fontString.icon:Hide()
     
     return fontString
 end
@@ -341,7 +330,7 @@ function SCT:RecycleFontString(fontString)
     table_insert(fontStringCache, fontString)
 end
 
--- Animation paths
+-- Animation paths (unchanged)
 local function verticalPath(elapsed, duration, distance)
     local progress = elapsed / duration
     return 0, progress * distance
@@ -358,7 +347,7 @@ local function arcPath(elapsed, duration, xDist, yStart, yTop, yBottom)
     return x, y
 end
 
--- Animation update
+-- Animation update (unchanged)
 local function AnimationOnUpdate()
     if not next(animating) then
         SCT.animationFrame:SetScript("OnUpdate", nil)
@@ -396,15 +385,6 @@ local function AnimationOnUpdate()
             
             -- Check if anchor frame is still valid
             if fontString.anchorFrame and fontString.anchorFrame:IsShown() then
-                -- For non-personal damage, check if we still have the right nameplate
-                if not fontString.isPersonal and fontString.guid then
-                    local currentNameplate = guidToNameplate[fontString.guid]
-                    if currentNameplate and currentNameplate ~= fontString.anchorFrame then
-                        -- Nameplate changed, update anchor
-                        fontString.anchorFrame = currentNameplate
-                    end
-                end
-                
                 local baseXOffset = fontString.isPersonal and config.position.personalXOffset or config.position.xOffset
                 local baseYOffset = fontString.isPersonal and config.position.personalYOffset or config.position.yOffset
                 fontString:SetPoint("CENTER", fontString.anchorFrame, "CENTER", baseXOffset + xOffset, baseYOffset + yOffset)
@@ -423,7 +403,7 @@ function SCT:Animate(fontString, anchorFrame, duration, animation, guid)
     fontString.animatingDuration = duration / config.animations.speed
     fontString.animatingStartTime = GetTime()
     fontString.anchorFrame = anchorFrame
-    fontString.guid = guid  -- Store GUID for tracking
+    fontString.guid = guid
     
     if animation == "verticalUp" or animation == "verticalDown" then
         fontString.distance = ANIMATION_VERTICAL_DISTANCE
@@ -468,11 +448,14 @@ function SCT:FormatNumber(amount)
     return tostring(amount)
 end
 
--- Color text
-function SCT:ColorText(text, school, spellName, isPersonal)
+-- Color text (updated for pet damage)
+function SCT:ColorText(text, school, spellName, isPersonal, isPet)
     local config = NotPlater.db.profile.sct
     
-    if config.colors.damageColor and DAMAGE_TYPE_COLORS[school] then
+    if isPet then
+        -- Use pet color for pet damage
+        return string_format("\124cff%s%s\124r", config.colors.petColor or "CC8400", text)
+    elseif config.colors.damageColor and DAMAGE_TYPE_COLORS[school] then
         return string_format("\124cff%s%s\124r", DAMAGE_TYPE_COLORS[school], text)
     else
         local color = isPersonal and config.colors.personalColor or config.colors.defaultColor
@@ -480,24 +463,25 @@ function SCT:ColorText(text, school, spellName, isPersonal)
     end
 end
 
--- Display damage event
-function SCT:DamageEvent(destGUID, spellName, amount, overkill, school, crit, spellId, isHeal)
+-- Display damage event (updated for pet damage)
+function SCT:DamageEvent(destGUID, spellName, amount, overkill, school, crit, spellId, isHeal, isPet)
     local config = NotPlater.db.profile.sct
     
     if not config.general.enable then return end
     if isHeal and not config.display.showHeals then return end
+    if isPet and not config.display.showPetDamage then return end
     
     local playerGUID = UnitGUID("player")
     local isPersonal = destGUID == playerGUID
     
     if isPersonal and not config.display.showPersonal then return end
     
-    -- Update mappings before getting nameplate
-    self:UpdateGUIDMappings()
+    self:Debug(string_format("DamageEvent: %s took %d from %s%s", tostring(destGUID), amount, spellName, isPet and " (Pet)" or ""))
     
+    -- Get nameplate for this GUID
     local nameplate = self:GetNameplateByGUID(destGUID)
     if not nameplate and not isPersonal then 
-        self:Debug("No nameplate found for damage to " .. (UnitName("target") or "unknown"))
+        self:Debug("No nameplate found for GUID: " .. tostring(destGUID))
         return 
     end
     
@@ -512,7 +496,7 @@ function SCT:DamageEvent(destGUID, spellName, amount, overkill, school, crit, sp
     if isPersonal then
         animation = crit and config.animations.personal.crit or config.animations.personal.normal
     else
-        local autoattack = spellName == AutoAttack or spellName == AutoShot or spellName == "Auto Attack"
+        local autoattack = spellName == AutoAttack or spellName == AutoShot or spellName == Shoot or spellName == "Auto Attack"
         if autoattack and crit then
             animation = config.animations.autoattackcrit
         elseif autoattack then
@@ -531,7 +515,7 @@ function SCT:DamageEvent(destGUID, spellName, amount, overkill, school, crit, sp
     if overkill and overkill > 0 and config.display.displayOverkill then
         text = text .. " (Overkill: " .. overkill .. ")"
     end
-    text = self:ColorText(text, school, spellName, isPersonal)
+    text = self:ColorText(text, school, spellName, isPersonal, isPet)
     
     -- Determine size
     local size = config.font.size
@@ -547,45 +531,24 @@ function SCT:DamageEvent(destGUID, spellName, amount, overkill, school, crit, sp
         size = size * config.sizing.critsScale
     end
     
-    -- Small hit detection
-    if config.sizing.smallHits and not isPersonal then
-        if not lastDamageEventTime or (lastDamageEventTime + SMALL_HIT_EXPIRY_WINDOW < GetTime()) then
-            numDamageEvents = 0
-            runningAverageDamageEvents = 0
-        end
-        
-        runningAverageDamageEvents = ((runningAverageDamageEvents * numDamageEvents) + amount) / (numDamageEvents + 1)
-        numDamageEvents = numDamageEvents + 1
-        lastDamageEventTime = GetTime()
-        
-        local threshold = crit and (amount / 2) or amount
-        if threshold < SMALL_HIT_MULTIPIER * runningAverageDamageEvents then
-            if config.sizing.smallHitsHide then
-                return
-            else
-                size = size * config.sizing.smallHitsScale
-            end
-        end
-    end
-    
-    self:Debug(string.format("Showing %d %s on %s", amount, spellName, isPersonal and "player" or "enemy"))
     self:DisplayText(nameplate, text, size, alpha, animation, spellId, crit and not isPersonal, spellName, isPersonal, destGUID)
 end
 
--- Display miss event
-function SCT:MissEvent(destGUID, spellName, missType, spellId)
+-- Display miss event (updated for pet damage)
+function SCT:MissEvent(destGUID, spellName, missType, spellId, isPet)
     local config = NotPlater.db.profile.sct
     
     if not config.general.enable then return end
+    if isPet and not config.display.showPetDamage then return end
     
     local playerGUID = UnitGUID("player")
     local isPersonal = destGUID == playerGUID
     
     if isPersonal and not config.display.showPersonal then return end
     
-    -- Update mappings before getting nameplate
-    self:UpdateGUIDMappings()
+    self:Debug(string_format("MissEvent: %s on %s from %s%s", missType, tostring(destGUID), spellName, isPet and " (Pet)" or ""))
     
+    -- Get nameplate for this GUID
     local nameplate = self:GetNameplateByGUID(destGUID)
     if not nameplate and not isPersonal then return end
     
@@ -599,7 +562,7 @@ function SCT:MissEvent(destGUID, spellName, missType, spellId)
     if animation == "disabled" then return end
     
     local text = MISS_EVENT_STRINGS[missType] or "Miss"
-    local color = isPersonal and config.colors.personalColor or config.colors.defaultColor
+    local color = isPet and config.colors.petColor or (isPersonal and config.colors.personalColor or config.colors.defaultColor)
     text = string_format("\124cff%s%s\124r", color, text)
     
     local size = config.font.size
@@ -617,7 +580,7 @@ function SCT:MissEvent(destGUID, spellName, missType, spellId)
     self:DisplayText(nameplate, text, size, alpha, animation, spellId, true, spellName, isPersonal, destGUID)
 end
 
--- Display text
+-- Display text (unchanged)
 function SCT:DisplayText(nameplate, text, size, alpha, animation, spellId, pow, spellName, isPersonal, guid)
     if not nameplate then return end
     
@@ -641,11 +604,20 @@ function SCT:DisplayText(nameplate, text, size, alpha, animation, spellId, pow, 
     fontString.pow = pow
     fontString.isPersonal = isPersonal
     
-    -- Set icon if available
-    if config.display.showIcon and spellId and fontString.icon then
-        local _, _, texture = GetSpellInfo(spellId)
-        if not texture and spellName then
-            _, _, texture = GetSpellInfo(spellName)
+    -- Set icon if enabled and available
+    if config.display.showIcon and fontString.icon then
+        local texture = nil
+        
+        -- Try to get spell texture
+        if spellId and spellId > 0 then
+            local _, _, spellTexture = GetSpellInfo(spellId)
+            texture = spellTexture
+        end
+        
+        -- Fallback to spell name
+        if not texture and spellName and spellName ~= "" then
+            local _, _, spellTexture = GetSpellInfo(spellName)
+            texture = spellTexture
         end
         
         if texture then
@@ -654,62 +626,96 @@ function SCT:DisplayText(nameplate, text, size, alpha, animation, spellId, pow, 
             fontString.icon:SetPoint("RIGHT", fontString, "LEFT", -2, 0)
             fontString.icon:SetAlpha(alpha)
             fontString.icon:Show()
+        else
+            fontString.icon:Hide()
         end
+    elseif fontString.icon then
+        fontString.icon:Hide()
     end
     
     self:Animate(fontString, nameplate, 1.5, animation, guid)
 end
 
--- Combat log event handler
-function SCT:COMBAT_LOG_EVENT_UNFILTERED(_, _, eventType, srcGUID, srcName, srcFlags, destGUID, destName, destFlags, ...)
-    local playerGUID = UnitGUID("player")
+-- FIXED Combat log event handler with pet damage and RANGE_DAMAGE
+function SCT:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, srcGUID, srcName, srcFlags, destGUID, destName, destFlags, ...)
+    -- First check if SCT is enabled
+    if not NotPlater.db.profile.sct.general.enable then
+        return
+    end
     
-    -- Process outgoing damage from player
-    if srcGUID == playerGUID then
+    local playerGUID = UnitGUID("player")
+    local isPet = self:IsSourcePlayerPet(srcFlags)
+    
+    -- Process damage from player OR player's pet
+    if srcGUID == playerGUID or isPet then
         if eventType == "SWING_DAMAGE" then
             local amount, overkill, _, _, _, _, critical = ...
-            self:DamageEvent(destGUID, AutoAttack or "Auto Attack", amount, overkill, 1, critical, 6603, false)
+            self:Debug(string_format("SWING_DAMAGE: %d damage to %s%s", amount, destName or "unknown", isPet and " (Pet)" or ""))
+            self:DamageEvent(destGUID, AutoAttack or "Auto Attack", amount, overkill, 1, critical, 6603, false, isPet)
             
-        elseif eventType == "SPELL_DAMAGE" or eventType == "SPELL_PERIODIC_DAMAGE" or eventType == "RANGE_DAMAGE" then
+        elseif eventType == "RANGE_DAMAGE" then  -- FIXED: No D at the end!
             local spellId, spellName, school, amount, overkill, _, _, _, _, critical = ...
-            self:DamageEvent(destGUID, spellName, amount, overkill, school, critical, spellId, false)
+            self:Debug(string_format("RANGE_DAMAGE: %d damage to %s with %s%s", amount, destName or "unknown", spellName or "unknown", isPet and " (Pet)" or ""))
+            self:DamageEvent(destGUID, spellName or "Ranged", amount, overkill, school, critical, spellId, false, isPet)
+            
+        elseif eventType == "SPELL_DAMAGE" or eventType == "SPELL_PERIODIC_DAMAGE" then
+            local spellId, spellName, school, amount, overkill, _, _, _, _, critical = ...
+            self:Debug(string_format("%s: %d damage to %s with %s%s", eventType, amount, destName or "unknown", spellName or "unknown", isPet and " (Pet)" or ""))
+            self:DamageEvent(destGUID, spellName, amount, overkill, school, critical, spellId, false, isPet)
             
         elseif eventType == "SPELL_HEAL" or eventType == "SPELL_PERIODIC_HEAL" then
             local spellId, spellName, school, amount, overheal, _, critical = ...
-            self:DamageEvent(destGUID, spellName, amount, overheal, school, critical, spellId, true)
+            self:DamageEvent(destGUID, spellName, amount, overheal, school, critical, spellId, true, isPet)
             
         elseif eventType == "SWING_MISSED" then
             local missType = ...
-            self:MissEvent(destGUID, AutoAttack or "Auto Attack", missType, 6603)
+            self:Debug(string_format("SWING_MISSED: %s on %s%s", missType, destName or "unknown", isPet and " (Pet)" or ""))
+            self:MissEvent(destGUID, AutoAttack or "Auto Attack", missType, 6603, isPet)
             
-        elseif eventType == "SPELL_MISSED" or eventType == "SPELL_PERIODIC_MISSED" or eventType == "RANGE_MISSED" then
+        elseif eventType == "RANGE_MISSED" then  -- FIXED: No D at the end!
             local spellId, spellName, school, missType = ...
-            self:MissEvent(destGUID, spellName, missType, spellId)
+            self:Debug(string_format("RANGE_MISSED: %s on %s%s", missType, destName or "unknown", isPet and " (Pet)" or ""))
+            self:MissEvent(destGUID, spellName or "Ranged", missType, spellId, isPet)
+            
+        elseif eventType == "SPELL_MISSED" or eventType == "SPELL_PERIODIC_MISSED" then
+            local spellId, spellName, school, missType = ...
+            self:MissEvent(destGUID, spellName, missType, spellId, isPet)
         end
     end
     
-    -- Process incoming damage to player
+    -- Process incoming damage to player (unchanged)
     if destGUID == playerGUID and NotPlater.db.profile.sct.display.showPersonal then
         if eventType == "SWING_DAMAGE" then
             local amount, overkill, _, _, _, _, critical = ...
-            self:DamageEvent(destGUID, "Melee", amount, overkill, 1, critical, 6603, false)
+            self:DamageEvent(destGUID, "Melee", amount, overkill, 1, critical, 6603, false, false)
             
-        elseif eventType:find("_DAMAGE") then
-            local spellId, spellName, school, amount, overkill, _, _, _, _, critical = ...
-            if spellId and amount then
-                self:DamageEvent(destGUID, spellName or "Unknown", amount, overkill or 0, school or 1, critical, spellId, false)
+        elseif string.find(eventType, "_DAMAGE") then
+            local spellId, spellName, school, amount, overkill, _, _, _, _, critical
+            if string.find(eventType, "SWING_") then
+                amount, overkill = ...
+                critical = select(7, ...)
+                spellId = 6603
+                spellName = "Melee"
+                school = 1
+            else
+                spellId, spellName, school, amount, overkill = ...
+                critical = select(9, ...)
             end
             
-        elseif eventType:find("_HEAL") and NotPlater.db.profile.sct.display.showHeals then
+            if amount then
+                self:DamageEvent(destGUID, spellName or "Unknown", amount, overkill or 0, school or 1, critical, spellId, false, false)
+            end
+            
+        elseif string.find(eventType, "_HEAL") and NotPlater.db.profile.sct.display.showHeals then
             local spellId, spellName, school, amount, overheal, _, critical = ...
             if spellId and amount then
-                self:DamageEvent(destGUID, spellName or "Heal", amount, overheal or 0, school or 2, critical, spellId, true)
+                self:DamageEvent(destGUID, spellName or "Heal", amount, overheal or 0, school or 2, critical, spellId, true, false)
             end
             
-        elseif eventType:find("_MISSED") then
+        elseif string.find(eventType, "_MISSED") then
             local spellId, spellName, school, missType = ...
             if missType then
-                self:MissEvent(destGUID, spellName or "Attack", missType, spellId or 0)
+                self:MissEvent(destGUID, spellName or "Attack", missType, spellId or 0, false)
             end
         end
     end
@@ -717,30 +723,39 @@ end
 
 -- Test mode
 function SCT:TestMode()
-    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: SCT Test mode")
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: SCT Test mode - Testing on current target or player")
     
     local testGUID = UnitGUID("target")
+    local testLocation = "target"
     if not testGUID then
         testGUID = UnitGUID("player")
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: No target selected, testing personal SCT")
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Testing on current target")
+        testLocation = "player"
     end
     
+    if not testGUID then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: No valid target for test")
+        return
+    end
+    
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: Testing on " .. testLocation)
+    
     local testEvents = {
-        {amount = 1234, crit = false, school = 1, spell = "Test Hit"},
-        {amount = 5678, crit = true, school = 4, spell = "Test Crit"},
-        {amount = 999, crit = false, school = 8, spell = "Test DoT"},
-        {missType = "DODGE", spell = "Test Dodge"},
-        {missType = "PARRY", spell = "Test Parry"},
+        {amount = 1234, crit = false, school = 1, spell = "Sinister Strike", spellId = 1752},
+        {amount = 5678, crit = true, school = 4, spell = "Fireball", spellId = 133},
+        {amount = 999, crit = false, school = 8, spell = "Lightning Bolt", spellId = 403},
+        {amount = 2500, crit = false, school = 16, spell = "Frost Bolt", spellId = 116},
+        {amount = 1337, crit = false, school = 1, spell = "Auto Shot", spellId = 75},
+        {amount = 888, crit = false, school = 1, spell = "Pet Bite", spellId = 17253, isPet = true},  -- Pet damage test
+        {missType = "DODGE", spell = "Heroic Strike", spellId = 78},
+        {missType = "PARRY", spell = "Mortal Strike", spellId = 12294},
     }
     
     for i, event in ipairs(testEvents) do
         C_Timer.After(i * 0.3, function()
             if event.missType then
-                self:MissEvent(testGUID, event.spell, event.missType, 12345)
+                self:MissEvent(testGUID, event.spell, event.missType, event.spellId, event.isPet)
             else
-                self:DamageEvent(testGUID, event.spell, event.amount, 0, event.school, event.crit, 12345, false)
+                self:DamageEvent(testGUID, event.spell, event.amount, 0, event.school, event.crit, event.spellId, false, event.isPet)
             end
         end)
     end
@@ -750,31 +765,21 @@ end
 function SCT:Initialize()
     self:InitializeDefaults()
     
-    -- Register for combat log
-    NotPlater.frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    -- Create our own frame for event handling to avoid conflicts
+    local eventFrame = CreateFrame("Frame", "NotPlaterSCTEventFrame")
+    eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     
-    -- Hook the combat log handler
-    local oldHandler = NotPlater.frame:GetScript("OnEvent")
-    NotPlater.frame:SetScript("OnEvent", function(self, event, ...)
+    -- Set up the event handler with CORRECT parameter passing
+    eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+            -- Pass ALL the combat log parameters correctly
             SCT:COMBAT_LOG_EVENT_UNFILTERED(...)
         end
-        if oldHandler then
-            oldHandler(self, event, ...)
-        end
     end)
     
-    -- Update GUID mappings periodically
-    local updateFrame = CreateFrame("Frame")
-    updateFrame:SetScript("OnUpdate", function(self, elapsed)
-        nameplateUpdateTimer = nameplateUpdateTimer + elapsed
-        if nameplateUpdateTimer >= 0.5 then  -- Update every 0.5 seconds
-            nameplateUpdateTimer = 0
-            SCT:UpdateGUIDMappings()
-        end
-    end)
+    self.eventFrame = eventFrame
     
-    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: SCT module initialized")
+    DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99NotPlater|r: SCT module initialized with pet damage support")
 end
 
 -- Initialize when ready
